@@ -1,0 +1,40 @@
+# FLASH AI - Git Ignore Rules
+
+# API keys and secrets
+config/api_keys.json
+
+# Log files
+logs/
+*.log
+
+# Temporary files
+temp_code_*.ring
+_cookies.txt
+
+
+
+# Session data (optional - uncomment to exclude)
+chats/
+*.json
+
+ai\logs\
+*.tmp
+
+ai\logs\
+*.log
+
+ai\memory\
+*json
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+Thumbs.db
+Desktop.ini
+.DS_Store
+

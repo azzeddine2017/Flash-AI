@@ -1,0 +1,1135 @@
+# 🏛️ FLASH AI — Comprehensive Architectural Analysis & Enhancement Blueprint
+
+> **Principal Systems Architect Report** — April 2026  
+> Full codebase analysis covering all 13 source modules, 2 entry points, and the complete agentic pipeline.
+
+---
+
+## Table of Contents
+
+1. [System Architecture Overview](#1-system-architecture-overview)
+2. [Component-by-Component Analysis](#2-component-by-component-analysis)
+3. [Critical Issues](#3-critical-issues)
+4. [Design Constraints & Scalability Risks](#4-design-constraints--scalability-risks)
+5. [Optimization Opportunities](#5-optimization-opportunities)
+6. [Advanced Feature Opportunities](#6-advanced-feature-opportunities)
+7. [Implementation Strategy](#7-implementation-strategy)
+8. [Proposed Code Improvements](#8-proposed-code-improvements)
+9. [System Evolution Proposals](#9-system-evolution-proposals)
+10. [Super-Upgrade Roadmap](#10-super-upgrade-roadmap)
+
+---
+
+## 1. System Architecture Overview
+
+### Current Architecture Map
+
+```mermaid
+graph TB
+    subgraph Entry["Entry Points"]
+        CLI["main.ring<br/>CLI Terminal App"]
+        GUI["gui_main.ring<br/>RingQt GUI FlashGUI"]
+    end
+
+    subgraph Core["Core Orchestration Layer"]
+        CA["CoreAgent<br/>Unified Bridge"]
+        SA["SmartAgent<br/>Reasoning Brain"]
+    end
+
+    subgraph Intelligence["Intelligence Layer"]
+        AIC["AIClient<br/>Multi-LLM Provider"]
+        CE["ContextEngine<br/>Context & Memory"]
+    end
+
+    subgraph Execution["Execution Layer"]
+        AT["AgentTools<br/>22+ Tools"]
+        CT["custom_tools/<br/>Self-Evolved Tools"]
+    end
+
+    subgraph Infrastructure["Infrastructure"]
+        HTTP["HTTPClient<br/>libcurl Wrapper"]
+        LOG["Logger<br/>File Logging"]
+        LOC["Localization<br/>EN/AR"]
+        TM["ThemeManager<br/>CLI Themes"]
+        UIM["UIManager<br/>CLI Renderer"]
+        UTILS["utils.ring<br/>Shared Functions"]
+    end
+
+    CLI --> CA
+    GUI --> CA
+    CA --> SA
+    SA --> AIC
+    SA --> CE
+    SA --> AT
+    AIC --> HTTP
+    AT --> CT
+    SA --> UIM
+    UIM --> LOC
+    UIM --> TM
+    SA --> LOG
+```
+
+### Architectural Role Summary
+
+| Component | Role | Lines | Size |
+|---|---|---|---|
+| [SmartAgent](file:///g:/Flash%20AI/src/smart_agent.ring) | Reasoning loop orchestrator, tool dispatch, security gate | 773 | 32KB |
+| [CoreAgent](file:///g:/Flash%20AI/src/core_agent.ring) | Unified CLI/GUI bridge, session management, config facade | 281 | 10KB |
+| [AIClient](file:///g:/Flash%20AI/src/ai_client.ring) | Multi-provider LLM gateway (Gemini, OpenAI, Claude, OpenRouter) | 923 | 38KB |
+| [AgentTools](file:///g:/Flash%20AI/src/agent_tools.ring) | Tool registry, dispatcher, self-evolution, sub-agent delegation | 1285 | 54KB |
+| [ContextEngine](file:///g:/Flash%20AI/src/context_engine.ring) | Conversation history, context budgeting, prompt templates | 429 | 19KB |
+| [UIManager](file:///g:/Flash%20AI/src/ui_manager.ring) | CLI terminal renderer with markdown/syntax highlighting | 610 | 21KB |
+| [HTTPClient](file:///g:/Flash%20AI/src/http_client.ring) | libcurl wrapper with cookie/SSL/download support | 341 | 10KB |
+| [Logger](file:///g:/Flash%20AI/src/logger.ring) | File-based logging with rotation | 110 | 3KB |
+| [utils.ring](file:///g:/Flash%20AI/src/utils.ring) | JSON encoding, path validation, security helpers | 342 | 12KB |
+| [main.ring](file:///g:/Flash%20AI/main.ring) | CLI entry with command history, tab completion, interactive menus | 1056 | 40KB |
+| [gui_main.ring](file:///g:/Flash%20AI/gui_main.ring) | RingQt GUI with sidebar session management | 536 | 24KB |
+
+**Total codebase: ~6,700 lines of Ring code across 13 modules.**
+
+---
+
+## 2. Component-by-Component Analysis
+
+### 2.1 SmartAgent — The Reasoning Brain
+
+**Architectural Role:** Orchestrates the multi-iterative agentic loop. Receives user messages, builds prompts, sends to LLM, processes tool calls in a `while` loop, and accumulates tokens across iterations.
+
+**Strengths:**
+- ✅ Clean agentic loop with `nMaxIterations = 25` safety cap
+- ✅ Cumulative token tracking across all loop iterations  
+- ✅ Provider-aware dispatch (Gemini vs OpenRouter vs fallback)
+- ✅ Security layer with path validation and user confirmation
+- ✅ Session persistence (JSON, Text, Markdown exports)
+
+**Weaknesses:**
+- ⚠️ **Monolithic sendToAI()** — 270 lines handling provider routing, tool execution, conversation history, security checks, and UI display in one function
+- ⚠️ **No error recovery within the loop** — if a tool fails, the error text goes back to the LLM but there's no structured retry or escalation
+- ⚠️ **Hard-coded iteration limit** without adaptive control
+- ⚠️ **No streaming support** — all responses are wait-and-return
+- ⚠️ **Token counter only tracks raw API tokens** — no estimation for context window overflow
+
+### 2.2 CoreAgent — The Bridge
+
+**Architectural Role:** Facade between CLI/GUI and SmartAgent. Provides unified session management, configuration, and auto-save logic.
+
+**Strengths:**
+- ✅ Clean separation of concerns — single entry point for both frontends
+- ✅ Auto-save every N messages
+- ✅ Private `createResult` helper avoids duplication
+
+**Weaknesses:**
+- ⚠️ **Thin layer** — mostly pass-through delegation
+- ⚠️ No request queuing or async support
+- ⚠️ No rate limiting awareness at the orchestration level
+- ⚠️ `processMessage` adds `"Working Directory"` context but no OS info (already done in ContextEngine, causing duplication)
+
+### 2.3 AIClient — Multi-LLM Gateway
+
+**Architectural Role:** Handles HTTP communication with 4 LLM providers, including JSON construction, response parsing, rate limiting, and retry logic.
+
+**Strengths:**
+- ✅ Provider switching with automatic endpoint reconfiguration
+- ✅ Rate limiting with RPM-based throttling
+- ✅ Robust response parsing for Gemini's complex structure (thoughts, function calls, multi-part)
+- ✅ Configurable via `api_keys.json`
+
+**Weaknesses:**
+- ⚠️ **923 lines — largest class, needs decomposition**
+- ⚠️ **Manual JSON construction** — hand-built JSON strings are fragile and error-prone
+- ⚠️ **Duplicated `buildContextualPrompt`** — exists in both AIClient and SmartAgent
+- ⚠️ **No streaming/SSE support** — blocks UI during long responses
+- ⚠️ **Rate limit retry is fixed at 12s** — no exponential backoff
+- ⚠️ **OpenAI and Claude parsers don't handle tool calls** — only OpenRouter and Gemini have agentic loop support
+- ⚠️ **cGeminiEndpoint is computed at class declaration time** — changing the model via `setModel()` correctly updates it, but the initial declaration couples model name to endpoint
+
+### 2.4 AgentTools — Dynamic Toolset
+
+**Architectural Role:** Registry of 22+ tools, positional/named parameter normalization, dynamic tool dispatch with `eval()`, self-evolution via `evolve_new_tool`, and sub-agent delegation.
+
+**Strengths:**
+- ✅ **Self-evolution** — AI can create tools at runtime and persist them
+- ✅ **Sub-agent delegation** with recursion guard (depth 3)
+- ✅ **Dual JSON export** — Gemini and OpenAI compatible function declarations
+- ✅ **Parameter normalization** — handles positional vs associative styles
+- ✅ **Command blacklisting** for security
+
+**Weaknesses:**
+- ⚠️ **1285 lines — largest module, needs splitting**
+- ⚠️ **Giant switch/off dispatcher** — adding tools requires modifying the switch statement
+- ⚠️ **`eval()` usage for dynamic tools** — while necessary, lacks sandboxing
+- ⚠️ **No tool execution timeout** — runaway shell commands or code could block indefinitely
+- ⚠️ **`listFiles` uses `system("dir ...")` instead of Ring's `dir()` function**
+- ⚠️ **`read_url` re-loads http_client.ring** despite it being already loaded via loadFiles.ring
+- ⚠️ **`isCoreProtected` blacklist is minimal** — only `.env` and `api_keys.json`
+- ⚠️ **No parallel tool execution** — tools run sequentially in the agentic loop
+
+### 2.5 ContextEngine — Memory & Context
+
+**Architectural Role:** Manages conversation history, code context, file operations context, project context, and prompt templates. Implements budget-aware sliding window.
+
+**Strengths:**
+- ✅ **Budget-based sliding window** — `nMaxBudget = 15000` characters, newest-first
+- ✅ **Type-specific prompts** — different system prompts for code analysis, file ops, project management
+- ✅ **Dynamic state injection** — OS, directory, date/time appended automatically
+- ✅ **Text truncation** at 4000 chars for tool results
+
+**Weaknesses:**
+- ⚠️ **No semantic memory** — purely chronological windowing, no importance scoring
+- ⚠️ **No conversation summarization** — old messages are simply dropped when history exceeds 50 items
+- ⚠️ **Context budget is character-based, not token-based** — imprecise for actual LLM limits
+- ⚠️ **No embedding storage** — can't do semantic retrieval of past conversations
+- ⚠️ **`nMaxContextTokens = 8000` is declared but never used**
+- ⚠️ **`loadHistoryJSON`** may silently lose data if JSON structure differs between providers
+
+### 2.6 UIManager — CLI Renderer
+
+**Strengths:**
+- ✅ Beautiful terminal UI with box-drawing characters
+- ✅ Markdown rendering with heading detection, bold, italic, inline code
+- ✅ Syntax highlighting engine for Ring code
+- ✅ Theme support (deepagents/hacker/light)
+- ✅ Bilingual support (EN/AR)
+
+**Weaknesses:**
+- ⚠️ All ANSI escape codes are hard-coded — no abstraction layer
+- ⚠️ `askConfirmation` uses busy-wait `kbhit()` loop
+
+---
+
+## 3. Critical Issues
+
+> [!CAUTION]
+> These issues can cause data loss, security vulnerabilities, or system crashes.
+
+### 3.1 🔴 Unbounded Shell Command Execution
+
+```diff
+# agent_tools.ring:974
+func executeCommand(cCommand)
+-    if isCommandBlacklisted(cCommand)
+-        return createErrorResult("SECURITY ERROR: This command is blacklisted for security.")
+-    ok
+-    cResult = systemcmd(cCommand)
++    if isCommandBlacklisted(cCommand)
++        return createErrorResult("SECURITY ERROR: This command is blacklisted for security.")
++    ok
++    # Add timeout protection
++    cTempFile = "cmd_output_" + clock() + ".tmp"
++    if iswindows()
++        systemcmd("cmd /c \"" + cCommand + " > " + cTempFile + " 2>&1\"")
++    else
++        systemcmd("timeout 30 " + cCommand + " > " + cTempFile + " 2>&1")
++    ok
++    cResult = ""
++    if fexists(cTempFile)
++        cResult = read(cTempFile)
++        remove(cTempFile)
++    ok
+```
+
+**Risk:** A command like `ping -t localhost` on Windows or `yes` on Linux will block the entire application forever. There is no timeout mechanism.
+
+### 3.2 🔴 Missing Input Sanitization for Shell Commands
+
+The `grep_search` and `searchInFiles` functions directly embed user-provided search patterns into shell commands:
+
+```ring
+# agent_tools.ring:654
+cCmd = "findstr /S /I /C:\"" + cPattern + "\" " + cDir + "\\*.ring"
+```
+
+An LLM-injected pattern like `"; del /s /q C:\` would be executed. The command blacklist only checks the tool's `command` parameter, not internally constructed commands.
+
+### 3.3 🔴 Token Counter Shadow Bug
+
+```ring
+# smart_agent.ring:27
+nTotalTokens = 0        # Instance variable
+
+# smart_agent.ring:237-239
+nBatchTokens = oAIResponse[:total_tokens]
+self.nTotalTokens += nBatchTokens      # Uses self. prefix
+self.oAIClient.addTokens(nBatchTokens) # Also updates AIClient
+```
+
+The `nTotalTokens` field is reset in `init()` but is also independently tracked in `AIClient.nTotalTokens`. If `CoreAgent.newSession()` resets `oSmartAgent.nTotalTokens = 0` but doesn't reset `oAIClient.nTotalTokens`, the counts diverge.
+
+### 3.4 🔴 eval() Without Sandbox for Dynamic Tools
+
+```ring
+# agent_tools.ring:1164
+eval(cRingCode)  # Arbitrary code execution from AI-generated Ring
+```
+
+The AI can instruct `evolve_new_tool` to register literally anything as Ring code, including reading API keys, deleting files, or making external network requests — bypassing all security layers.
+
+---
+
+## 4. Design Constraints & Scalability Risks
+
+### 4.1 Single-Threaded Architecture
+
+The entire system runs in one thread. During a long agentic loop (up to 25 iterations × API call latency), the CLI is frozen and the GUI is unresponsive (despite `processEvents()` calls).
+
+**Impact:** 
+- No background task processing
+- No concurrent tool execution  
+- UI freezes during API calls
+
+### 4.2 Synchronous HTTP
+
+`HTTPClient` uses blocking `curl_easy_perform_silent()`. Every API call blocks the entire application for up to `nTimeout` seconds.
+
+### 4.3 Context Window Overflow
+
+The sliding window uses character count (`nMaxBudget = 15000`) but:
+- Actual token limits vary by model (8K to 128K+)
+- Character ≠ tokens (ratio ≈ 4:1 for English, varies for Arabic)
+- System prompt + tool declarations can consume 30%+ of the window before any history is added
+- No explicit check prevents sending a request that exceeds the model's context limit
+
+### 4.4 No State Machine for Agent Lifecycle
+
+The agentic loop is a simple `while` loop with no formal states. This prevents:
+- Pause/resume functionality
+- Progress reporting
+- Timeout-per-step handling
+- Structured error recovery
+
+### 4.5 Tight Coupling
+
+- `SmartAgent` directly accesses `oUIManager` methods (display logic in business logic)
+- `gui_main.ring` directly accesses `oCoreAgent.oSmartAgent.oAIClient.cGeminiModel` (violates encapsulation)
+- `main.ring` creates new `AgentTools()` instances for `/cmd` commands instead of using the shared instance
+
+---
+
+## 5. Optimization Opportunities
+
+### 5.1 Split AgentTools into Domain Modules
+
+**Current:** 1285-line monolith  
+**Proposed:**
+
+```
+src/tools/
+├── file_tools.ring          # read, write, delete, list, mkdir, replace
+├── code_tools.ring          # run_ring_code, analyze_code, format_code
+├── project_tools.ring       # create_project, analyze_project
+├── git_tools.ring           # init, status, add, commit
+├── system_tools.ring        # execute_command, search_in_files
+├── web_tools.ring           # read_url
+├── evolution_tools.ring     # evolve_new_tool, delegate_task
+└── tool_registry.ring       # Registration, dispatch, JSON export
+```
+
+### 5.2 Replace Manual JSON with Encoder
+
+All hand-built JSON strings in `AIClient` should use `jsonEncodeRecursive()`:
+
+```ring
+# BEFORE (fragile):
+cRequestJSON = '{"contents":[{"role":"user","parts":[{"text":"' + cPromptJSON + '"}]}],' + ...
+
+# AFTER (robust):
+oRequest = [
+    ["contents", [
+        [["role", "user"], ["parts", [
+            [["text", cFullPrompt]]
+        ]]]
+    ]],
+    ["tools", [...]],
+    ["generationConfig", [
+        ["temperature", nTemperature],
+        ["maxOutputTokens", nMaxTokens]
+    ]]
+]
+cRequestJSON = jsonEncodeRecursive(oRequest)
+```
+
+### 5.3 Implement Token Estimation
+
+```ring
+# New utility in utils.ring
+func estimateTokens cText
+    # GPT-style BPE approximation: ~4 chars per token for English
+    # Arabic tends to be ~2-3 chars per token
+    if hasArabicText(cText)
+        return ceil(len(cText) / 2.5)
+    ok
+    return ceil(len(cText) / 4)
+```
+
+### 5.4 Exponential Backoff for Rate Limits
+
+Replace the fixed `sleep(12)` with adaptive retry:
+
+```ring
+func retryWithBackoff nAttempt
+    nDelay = 2 * pow(2, nAttempt)  # 4, 8, 16, 32...
+    if nDelay > 60  nDelay = 60  ok
+    see "  [!] Waiting " + nDelay + "s before retry " + nAttempt + "..." + nl
+    sleep(nDelay)
+```
+
+---
+
+## 6. Advanced Feature Opportunities
+
+### 6.1 🧠 Context Intelligence Layer
+
+A new `ContextIntelligence` class that sits between `ContextEngine` and `SmartAgent`:
+
+```ring
+class ContextIntelligence
+
+    oContextEngine = null
+    aMessageWeights = []
+
+    func init oEngine
+        oContextEngine = oEngine
+
+    # Classify each message's importance (0.0 to 1.0)
+    func classifyMessage cRole, cContent, cType
+        nWeight = 0.5  # Base weight
+        
+        # User messages with questions are high priority
+        if cRole = "user" and (substr(cContent, "?") or substr(cContent, "how") or substr(cContent, "why"))
+            nWeight = 0.9
+        ok
+        
+        # Tool results are medium priority (can be re-fetched)
+        if cType = "tool_result"
+            nWeight = 0.3
+        ok
+        
+        # System notes are low priority
+        if cRole = "system" and cType = "system_note"
+            nWeight = 0.1
+        ok
+        
+        # Error messages are high priority (prevents repeating mistakes)
+        if substr(lower(cContent), "error") or substr(lower(cContent), "failed")
+            nWeight = 0.85
+        ok
+        
+        return nWeight
+
+    # Build context with importance-weighted selection
+    func buildWeightedContext cRequestType, cCurrentCode, nTokenBudget
+        aAllMessages = oContextEngine.aConversationHistory
+        
+        # Score all messages
+        aScored = []
+        for i = 1 to len(aAllMessages)
+            oMsg = aAllMessages[i]
+            cRole = getValueFromList(oMsg, "role", "user")
+            cContent = getValueFromList(oMsg, "content", "")
+            cType = getValueFromList(oMsg, "type", "chat")
+            nWeight = classifyMessage(cRole, cContent, cType)
+            
+            # Recency bonus: more recent = higher weight
+            nRecencyBonus = i / len(aAllMessages) * 0.3
+            nFinalScore = nWeight + nRecencyBonus
+            
+            aScored + [i, nFinalScore, len(cContent)]
+        next
+        
+        # Sort by score descending
+        aScored = sortByScore(aScored)
+        
+        # Select messages within budget
+        nUsed = 0
+        aSelected = []
+        for oItem in aScored
+            nIdx = oItem[1]
+            nLen = oItem[3]
+            nTokenEst = estimateTokens(nLen)
+            if nUsed + nTokenEst <= nTokenBudget
+                aSelected + nIdx
+                nUsed += nTokenEst
+            ok
+        next
+        
+        # Return in chronological order
+        return sortIndicedMessages(aAllMessages, aSelected)
+```
+
+### 6.2 🧬 Long-Term Memory System
+
+Persistent memory across sessions using a JSON-based knowledge base:
+
+```ring
+class LongTermMemory
+
+    cMemoryFile = ""
+    aMemories = []
+    nMaxMemories = 500
+
+    func init
+        cMemoryFile = APP_PATH("memory/knowledge_base.json")
+        ensureDirectoryExists("memory")
+        loadMemories()
+
+    func remember cCategory, cFact, nImportance
+        oMemory = [
+            ["category", cCategory],
+            ["fact", cFact],
+            ["importance", nImportance],
+            ["created", date() + " " + time()],
+            ["access_count", 0],
+            ["last_accessed", ""]
+        ]
+        aMemories + oMemory
+        if len(aMemories) > nMaxMemories
+            pruneMemories()
+        ok
+        saveMemories()
+
+    func recall cQuery, nMaxResults
+        # Score each memory against the query
+        aResults = []
+        cQueryLower = lower(cQuery)
+        aQueryWords = split(cQueryLower, " ")
+        
+        for i = 1 to len(aMemories)
+            oMem = aMemories[i]
+            cFact = lower(getValueFromList(oMem, "fact", ""))
+            nScore = 0
+            for cWord in aQueryWords
+                if len(cWord) > 2 and substr(cFact, cWord)
+                    nScore += 1
+                ok
+            next
+            if nScore > 0
+                aResults + [i, nScore]
+            ok
+        next
+        
+        # Sort by score and return top N
+        aResults = sortDescending(aResults)
+        aReturn = []
+        for i = 1 to min(nMaxResults, len(aResults))
+            nIdx = aResults[i][1]
+            aReturn + aMemories[nIdx]
+            # Update access stats
+            aMemories[nIdx] = updateAccess(aMemories[nIdx])
+        next
+        return aReturn
+
+    func pruneMemories
+        # Remove lowest importance + least accessed
+        # Keep the nMaxMemories most valuable
+        # ...
+
+    private
+    func loadMemories
+        if fexists(cMemoryFile)
+            try
+                aMemories = json2list(read(cMemoryFile))
+            catch done
+        ok
+
+    func saveMemories
+        write(cMemoryFile, jsonEncodeRecursive(aMemories))
+```
+
+### 6.3 🔄 Self-Correction Loop (Reflection Engine)
+
+A specialized module that analyzes tool execution failures and autonomously retries with corrected approaches:
+
+```ring
+class ReflectionEngine
+
+    nMaxRetries = 3
+    aErrorPatterns = []
+
+    func init
+        # Known error pattern → fix mapping
+        aErrorPatterns = [
+            ["file not found",     "Try listing files first to verify the path"],
+            ["syntax error",       "Check Ring syntax: ok/next/done keywords, string escaping"],
+            ["permission denied",  "Request /authorize or use a different path"],
+            ["command not found",  "Verify the command exists on this OS"],
+            ["timeout",            "Break the operation into smaller chunks"]
+        ]
+
+    func analyzeFailure cToolName, cError, aParams
+        oAnalysis = [
+            ["original_tool", cToolName],
+            ["error", cError],
+            ["diagnosis", ""],
+            ["suggested_action", ""],
+            ["retry_params", []],
+            ["should_retry", false]
+        ]
+
+        cErrorLower = lower(cError)
+        for aPattern in aErrorPatterns
+            if substr(cErrorLower, aPattern[1])
+                oAnalysis = setVal(oAnalysis, "diagnosis", aPattern[2])
+                oAnalysis = setVal(oAnalysis, "should_retry", true)
+                exit
+            ok
+        next
+
+        return oAnalysis
+
+    func buildRecoveryPrompt oAnalysis
+        cPrompt = "[SELF-CORRECTION PROTOCOL]" + nl
+        cPrompt += "Tool: " + getValueFromList(oAnalysis, "original_tool", "") + nl
+        cPrompt += "Error: " + getValueFromList(oAnalysis, "error", "") + nl
+        cPrompt += "Diagnosis: " + getValueFromList(oAnalysis, "diagnosis", "") + nl
+        cPrompt += "Action: Analyze the error and retry with a corrected approach." + nl
+        return cPrompt
+```
+
+### 6.4 📊 Performance Telemetry
+
+Real-time performance monitoring:
+
+```ring
+class Telemetry
+
+    aMetrics = []
+    nSessionStart = 0
+
+    func init
+        nSessionStart = clock()
+
+    func recordMetric cName, nValue, cUnit
+        aMetrics + [
+            ["name", cName],
+            ["value", nValue],
+            ["unit", cUnit],
+            ["timestamp", clock() - nSessionStart]
+        ]
+
+    func recordToolExecution cToolName, nDuration, bSuccess
+        recordMetric("tool_" + cToolName, nDuration, "ms")
+        recordMetric("tool_success_rate", iif(bSuccess, 1, 0), "bool")
+
+    func recordAPICall cProvider, nLatency, nTokens
+        recordMetric("api_latency_" + cProvider, nLatency, "ms")
+        recordMetric("api_tokens_" + cProvider, nTokens, "tokens")
+
+    func getReport
+        # Aggregate metrics into a summary
+        cReport = "=== Session Telemetry ===" + nl
+        cReport += "Duration: " + ((clock() - nSessionStart) / clockspersecond()) + "s" + nl
+        cReport += "Total Metrics: " + len(aMetrics) + nl
+        # ... compute averages, p99, etc.
+        return cReport
+```
+
+### 6.5 🛡️ Enhanced Security Layer
+
+```ring
+class SecurityLayer
+
+    bAuthorized = false
+    aAuditLog = []
+    aPathWhitelist = []
+    aSandboxRules = []
+
+    func init
+        # Default whitelist: current dir and children
+        aPathWhitelist + CurrentDir()
+
+    func validateToolExecution cToolName, aParams
+        oResult = [
+            ["allowed", true],
+            ["reason", ""],
+            ["risk_level", "low"]  # low, medium, high, critical
+        ]
+
+        # Check tool risk level
+        switch cToolName
+            on "execute_command"
+                oResult = setRisk(oResult, "critical")
+                if not bAuthorized
+                    oResult = deny(oResult, "Shell commands require /authorize")
+                ok
+            on "delete_file"
+                oResult = setRisk(oResult, "high")
+            on "write_file" on "replace_file_content"
+                oResult = setRisk(oResult, "medium")
+            on "evolve_new_tool"
+                oResult = setRisk(oResult, "critical")
+                if not bAuthorized
+                    oResult = deny(oResult, "Self-evolution requires /authorize")
+                ok
+        off
+
+        # Audit
+        aAuditLog + [
+            ["timestamp", date() + " " + time()],
+            ["tool", cToolName],
+            ["allowed", oResult[1][2]],
+            ["risk", oResult[3][2]]
+        ]
+
+        return oResult
+
+    func validatePath cPath
+        # Normalize and check against whitelist
+        cNorm = getFullPath(cPath)
+        for cAllowed in aPathWhitelist
+            if left(cNorm, len(cAllowed)) = lower(cAllowed)
+                return true
+            ok
+        next
+        return false
+
+    func getAuditReport
+        cReport = "=== Security Audit Log ===" + nl
+        for oEntry in aAuditLog
+            cReport += getValueFromList(oEntry, "timestamp", "") + " | "
+            cReport += getValueFromList(oEntry, "tool", "") + " | "
+            cReport += "Allowed: " + getValueFromList(oEntry, "allowed", "") + " | "
+            cReport += "Risk: " + getValueFromList(oEntry, "risk", "") + nl
+        next
+        return cReport
+```
+
+### 6.6 🔗 Dependency Graph Mapper
+
+Automated analysis of Ring module dependencies:
+
+```ring
+class DependencyMapper
+
+    func mapProject cRootDir
+        aFiles = findRingFiles(cRootDir)
+        aGraph = []
+
+        for cFile in aFiles
+            cContent = read(cFile)
+            aLoads = extractLoadStatements(cContent)
+            aGraph + [
+                ["file", cFile],
+                ["loads", aLoads],
+                ["classes", extractClasses(cContent)],
+                ["functions", extractFunctions(cContent)]
+            ]
+        next
+        return aGraph
+
+    func extractLoadStatements cContent
+        aLoads = []
+        aLines = str2list(cContent)
+        for cLine in aLines
+            cTrimmed = trim(cLine)
+            if left(cTrimmed, 5) = "load " and not left(cTrimmed, 2) = "//"
+                cFile = substr(cTrimmed, 6)
+                cFile = substr(cFile, '"', "")
+                aLoads + cFile
+            ok
+        next
+        return aLoads
+
+    func generateMermaidGraph aGraph
+        cMermaid = "graph TD" + nl
+        for oNode in aGraph
+            cFile = getValueFromList(oNode, "file", "")
+            aLoads = getValueFromList(oNode, "loads", [])
+            for cLoad in aLoads
+                cMermaid += "    " + sanitizeId(cFile) + " --> " + sanitizeId(cLoad) + nl
+            next
+        next
+        return cMermaid
+```
+
+### 6.7 🤖 Adaptive Tool Selection
+
+Pre-filter tools sent to the LLM based on request classification to reduce token usage:
+
+```ring
+class AdaptiveToolSelector
+
+    func selectTools cMessage, cRequestType, aAllTools
+        aRelevantTools = []
+        
+        # Always include core tools
+        aCoreTools = ["read_file", "write_file", "list_files", 
+                      "replace_file_content", "grep_search", "execute_command"]
+        
+        # Add type-specific tools
+        switch cRequestType
+            on "file_operation"
+                aCoreTools + ["create_directory", "delete_file", "search_in_files"]
+            on "code_analysis"
+                aCoreTools + ["run_ring_code", "analyze_code", "format_code"]
+            on "project_management"
+                aCoreTools + ["create_project", "analyze_project", 
+                              "git_init", "git_status", "git_add", "git_commit"]
+        off
+        
+        # Always include meta-tools
+        aCoreTools + ["evolve_new_tool", "delegate_task"]
+        
+        # Filter
+        for oTool in aAllTools
+            if find(aCoreTools, oTool.name) > 0
+                aRelevantTools + oTool
+            ok
+        next
+        
+        return aRelevantTools
+```
+
+### 6.8 📝 Context Summarization Engine
+
+Compress old conversation segments to preserve knowledge while reducing tokens:
+
+```ring
+class ContextSummarizer
+
+    oAIClient = null
+
+    func init oClient
+        oAIClient = oClient
+
+    # Summarize a batch of messages into a compact digest
+    func summarizeBatch aMessages
+        cBatch = ""
+        for oMsg in aMessages
+            cRole = getValueFromList(oMsg, "role", "user")
+            cContent = getValueFromList(oMsg, "content", "")
+            cBatch += cRole + ": " + cContent + nl
+        next
+        
+        cPrompt = "Summarize the following conversation in 3-5 bullet points. " +
+                  "Focus on: decisions made, files modified, errors encountered, and pending tasks." + nl + nl +
+                  cBatch
+        
+        oRes = oAIClient.sendChatRequest(cPrompt, "You are a conversation summarizer.", [])
+        if oRes[:success]
+            return oRes[:message]
+        ok
+        return ""
+
+    # Check if conversation needs summarization
+    func needsSummarization aHistory, nThreshold
+        return len(aHistory) > nThreshold
+```
+
+---
+
+## 7. Implementation Strategy
+
+### Phase 1: Critical Fixes (Immediate) ⚡
+
+| Priority | Task | Component | Effort |
+|---|---|---|---|
+| P0 | Add command execution timeout | AgentTools | 1 hour |
+| P0 | Sanitize shell-injected parameters in grep/search | AgentTools | 30 min |
+| P0 | Add sandbox validation for evolve_new_tool | AgentTools | 2 hours |
+| P0 | Fix token counter divergence (AIClient vs SmartAgent) | SmartAgent, CoreAgent | 1 hour |
+| P1 | Add exponential backoff for rate limits | AIClient | 1 hour |
+
+### Phase 2: Architecture Improvements (1–2 Weeks) 🏗️
+
+| Priority | Task | New Module | Effort |
+|---|---|---|---|
+| P1 | Split AgentTools into domain modules | `src/tools/*.ring` | 4 hours |
+| P1 | Replace hand-built JSON with encoder | AIClient | 3 hours |
+| P1 | Add token estimation utility | utils.ring | 1 hour |
+| P1 | Implement SecurityLayer class | `src/security_layer.ring` | 4 hours |
+| P2 | Remove duplicated buildContextualPrompt | SmartAgent, AIClient | 1 hour |
+| P2 | Add tool execution timing/telemetry | SmartAgent, AgentTools | 2 hours |
+
+### Phase 3: Advanced Capabilities (2–4 Weeks) 🚀
+
+| Priority | Task | New Module | Effort |
+|---|---|---|---|
+| P2 | Context Intelligence Layer | `src/context_intelligence.ring` | 8 hours |
+| P2 | Long-Term Memory System | `src/long_term_memory.ring` | 6 hours |
+| P2 | Reflection Engine (Self-Correction) | `src/reflection_engine.ring` | 6 hours |
+| P2 | Adaptive Tool Selection | `src/tool_selector.ring` | 3 hours |
+| P3 | Context Summarization | `src/context_summarizer.ring` | 4 hours |
+| P3 | Performance Telemetry | `src/telemetry.ring` | 3 hours |
+| P3 | Dependency Graph Mapper | `src/dependency_mapper.ring` | 4 hours |
+
+### Phase 4: Super-Upgrades (4–8 Weeks) 🔮
+
+| Priority | Task | Architectural Change | Effort |
+|---|---|---|---|
+| P3 | Agent State Machine | Replace while loop with formal FSM | 12 hours |
+| P3 | Multi-Agent Collaboration Protocol | Shared memory between sub-agents | 16 hours |
+| P3 | Codebase Semantic Index | File + function index with keyword scoring | 12 hours |
+| P4 | Streaming Response Support | Chunked HTTP + progressive UI rendering | 20 hours |
+| P4 | Plugin Architecture | Dynamic module loading from external repos | 16 hours |
+
+---
+
+## 8. Proposed Code Improvements
+
+### 8.1 SmartAgent: Decompose `sendToAI()`
+
+The current 270-line `sendToAI()` should be split into focused methods:
+
+```ring
+func sendToAI(cMessage, cRequestType, cCurrentCode)
+    try
+        oContext = prepareContext(cMessage, cRequestType, cCurrentCode)
+        aConversation = buildInitialConversation(oContext)
+        
+        nMaxIterations = 25
+        nIteration = 0
+        aToolsUsed = []
+        
+        while nIteration < nMaxIterations
+            nIteration++
+            processUIEvents()
+            
+            oAIResponse = dispatchToProvider(aConversation, cMessage)
+            if not oAIResponse[:success]
+                return createErrorResponse("AI request failed: " + oAIResponse[:error])
+            ok
+            
+            updateTokenCount(oAIResponse)
+            displayThoughtAndMessage(oAIResponse)
+            
+            if getResponseType(oAIResponse) = "function_call"
+                oToolResult = executeToolSafely(oAIResponse, aToolsUsed)
+                appendToolResultToConversation(aConversation, oAIResponse, oToolResult)
+                loop
+            ok
+            
+            return finalizeResponse(oAIResponse, aToolsUsed)
+        end
+        
+        return createSuccessResponse("Tools executed successfully.")
+    catch
+        return createErrorResponse("AI request error: " + cCatchError)
+    done
+```
+
+### 8.2 Add Tool Execution Timeout
+
+```ring
+# In AgentTools
+func executeCommandSafe(cCommand, nTimeoutSec)
+    if isCommandBlacklisted(cCommand)
+        return createErrorResult("SECURITY ERROR: Blacklisted command.")
+    ok
+    
+    try
+        cTempOut = "cmd_" + clock() + ".tmp"
+        cTempErr = "cmd_" + clock() + ".err"
+        
+        if iswindows()
+            # Windows: use cmd /c with output redirect
+            cWrapped = 'cmd /c "' + cCommand + ' > ' + cTempOut + ' 2> ' + cTempErr + '"'
+        else
+            cWrapped = "timeout " + nTimeoutSec + " sh -c '" + cCommand + "' > " + cTempOut + " 2> " + cTempErr
+        ok
+        
+        nStart = clock()
+        systemcmd(cWrapped)
+        nDuration = (clock() - nStart) / clockspersecond()
+        
+        cOutput = ""
+        if fexists(cTempOut) cOutput = read(cTempOut) remove(cTempOut) ok
+        cErr = ""
+        if fexists(cTempErr) cErr = read(cTempErr) remove(cTempErr) ok
+        
+        if cErr != ""
+            cOutput += nl + "[STDERR]: " + cErr
+        ok
+        
+        return createSuccessResult("Command executed (" + nDuration + "s):" + nl + cOutput)
+    catch
+        return createErrorResult("Command failed: " + cCatchError)
+    done
+```
+
+### 8.3 Agent State Machine
+
+Replace the simple while loop with a formal state machine:
+
+```ring
+# Agent States
+AGENT_IDLE         = 0
+AGENT_PLANNING     = 1
+AGENT_CALLING_LLM  = 2
+AGENT_EXEC_TOOL    = 3
+AGENT_REFLECTING   = 4
+AGENT_FINALIZING   = 5
+AGENT_ERROR        = 6
+
+class AgentStateMachine
+
+    nCurrentState = AGENT_IDLE
+    nMaxTransitions = 100
+    aStateLog = []
+    
+    func transition nNewState
+        aStateLog + [
+            ["from", nCurrentState],
+            ["to", nNewState],
+            ["timestamp", clock()]
+        ]
+        nCurrentState = nNewState
+    
+    func canTransition nTo
+        # Define valid state transitions
+        switch nCurrentState
+            on AGENT_IDLE
+                return nTo = AGENT_PLANNING
+            on AGENT_PLANNING
+                return nTo = AGENT_CALLING_LLM
+            on AGENT_CALLING_LLM
+                return nTo = AGENT_EXEC_TOOL or nTo = AGENT_FINALIZING or nTo = AGENT_ERROR
+            on AGENT_EXEC_TOOL
+                return nTo = AGENT_REFLECTING or nTo = AGENT_CALLING_LLM or nTo = AGENT_ERROR
+            on AGENT_REFLECTING
+                return nTo = AGENT_CALLING_LLM or nTo = AGENT_FINALIZING
+            on AGENT_ERROR
+                return nTo = AGENT_REFLECTING or nTo = AGENT_FINALIZING
+        off
+        return false
+    
+    func getStateLog
+        return aStateLog
+```
+
+---
+
+## 9. System Evolution Proposals
+
+### 9.1 New Recommended Architecture
+
+```mermaid
+graph TB
+    subgraph EntryLayer["Entry Points"]
+        CLI["CLI Terminal"]
+        GUI["RingQt GUI"]
+        API["Future: REST API"]
+    end
+
+    subgraph OrchestratorLayer["Orchestration"]
+        CA["CoreAgent"]
+        SM["AgentStateMachine"]
+        SA["SmartAgent"]
+    end
+
+    subgraph IntelligenceLayer["Intelligence"]
+        AIC["AIClient"]
+        CI["ContextIntelligence"]
+        RE["ReflectionEngine"]
+        ATS["AdaptiveToolSelector"]
+    end
+
+    subgraph MemoryLayer["Memory"]
+        CE["ContextEngine"]
+        LTM["LongTermMemory"]
+        CS["ContextSummarizer"]
+    end
+
+    subgraph ExecutionLayer["Execution"]
+        TR["ToolRegistry"]
+        FT["FileTools"]
+        CT["CodeTools"]
+        PT["ProjectTools"]
+        GT["GitTools"]
+        ST["SystemTools"]
+        WT["WebTools"]
+        ET["EvolutionTools"]
+        CUS["CustomTools"]
+    end
+
+    subgraph SecurityLayer["Security"]
+        SL["SecurityLayer"]
+        PV["PathValidator"]
+        SB["Sandbox"]
+    end
+
+    subgraph ObservabilityLayer["Observability"]
+        TM["Telemetry"]
+        LOG["Logger"]
+        DM["DependencyMapper"]
+    end
+
+    CLI --> CA
+    GUI --> CA
+    API --> CA
+    CA --> SM
+    SM --> SA
+    SA --> AIC
+    SA --> CI
+    SA --> RE
+    SA --> ATS
+    CI --> CE
+    CI --> LTM
+    CI --> CS
+    ATS --> TR
+    TR --> FT
+    TR --> CT
+    TR --> PT
+    TR --> GT
+    TR --> ST
+    TR --> WT
+    TR --> ET
+    TR --> CUS
+    SA --> SL
+    FT --> PV
+    ST --> SB
+    SA --> TM
+    SA --> LOG
+```
+
+### 9.2 New Modules Summary
+
+| Module | Purpose | Priority |
+|---|---|---|
+| `src/security_layer.ring` | Centralized security validation, audit logging, risk assessment | P1 |
+| `src/context_intelligence.ring` | Weighted context selection, importance scoring | P2 |
+| `src/long_term_memory.ring` | Cross-session persistent memory with keyword search | P2 |
+| `src/reflection_engine.ring` | Error-pattern matching, self-correction prompt generation | P2 |
+| `src/tool_selector.ring` | Request-type aware tool filtering to reduce token waste | P2 |
+| `src/context_summarizer.ring` | LLM-based conversation compression | P3 |
+| `src/telemetry.ring` | Performance metrics, latency tracking, success rates | P3 |
+| `src/dependency_mapper.ring` | Project structure analysis, load-graph visualization | P3 |
+| `src/agent_state_machine.ring` | Formal FSM for agentic loop lifecycle | P3 |
+| `src/tools/tool_registry.ring` | Decoupled tool registration and dispatch | P1 |
+
+---
+
+## 10. Super-Upgrade Roadmap
+
+### 🎯 Level 1: Intelligent Agent (Current → Next)
+
+- [x] Multi-iterative reasoning loop
+- [x] Self-evolution (tool creation)
+- [x] Sub-agent delegation
+- [ ] **Context Intelligence** — weighted, importance-scored context
+- [ ] **Self-Correction** — structured error recovery
+- [ ] **Adaptive Tools** — request-aware tool filtering
+- [ ] **Performance Telemetry** — real-time metrics
+
+### 🎯 Level 2: Autonomous Agent
+
+- [ ] **Long-Term Memory** — persistent cross-session knowledge
+- [ ] **Context Summarization** — LLM-compressed history
+- [ ] **Codebase Semantic Index** — function/class/variable index
+- [ ] **Predictive Tool Use** — predict likely next tool based on history
+- [ ] **Multi-Agent Shared Memory** — sub-agents share findings
+
+### 🎯 Level 3: Self-Evolving Platform
+
+- [ ] **Plugin Architecture** — load external tool packages
+- [ ] **Agent State Machine** — pause/resume/checkpoint
+- [ ] **Streaming Responses** — progressive output rendering
+- [ ] **Auto-Project Understanding** — automatic README/architecture analysis on first load
+- [ ] **Behavioral Learning** — track which tools succeed for which patterns
+
+> [!IMPORTANT]
+> **Implementation Principle:** Every enhancement should be **incremental** and **backward-compatible**. New modules should be opt-in via constructor injection, not forced refactoring. The existing agentic loop must continue to work unchanged while new capabilities are layered on top.
+
+---
+
+> **End of Architectural Analysis**  
+> This blueprint provides a clear path from FLASH AI v2.5's current state to a **world-class autonomous AI agent platform**, while respecting the Ring language ecosystem and the project's modular design philosophy.
