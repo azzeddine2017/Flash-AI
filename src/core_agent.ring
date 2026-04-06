@@ -235,7 +235,12 @@ class CoreAgent
         return oSmartAgent.oAIClient.hasValidAPIKey()
 
     func saveAPIKey cKey
-        oSmartAgent.oAIClient.saveAPIKey(cKey)
+        if fexists(APP_PATH("config/api_keys.json"))
+            oSmartAgent.oAIClient.saveAPIKey(cKey)
+        else
+            oSmartAgent.oAIClient.createDefaultConfig()
+            oSmartAgent.oAIClient.saveAPIKey(cKey)
+        ok
 
     # ===================================================================
     # Status & Info Getters

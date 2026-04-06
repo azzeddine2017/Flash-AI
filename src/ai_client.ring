@@ -45,7 +45,8 @@ class AIClient
     func init()
         loadAPIKeys()
         see "AIClient initialized with provider: " + cCurrentProvider + nl
-
+        
+        
     func addTokens n
         nTotalTokens += n
     
@@ -107,24 +108,21 @@ class AIClient
     # ===================================================================
     func createDefaultConfig()
         try
-            if not fexists(APP_PATH("config"))
-                if iswindows()
-                    makedir(APP_PATH("config"))
-                else
-                    makedir(APP_PATH("config"))
-                ok
-            ok
+            ensureDirectoryExists("config")
             
-            oDefaultConfig = [
-                "gemini_api_key" = "",
-                "openai_api_key" = "",
-                "claude_api_key" = "",
-                "openrouter_api_key" = "",
-                "default_provider" = "gemini"
-            ]
-            
-            cConfigJSON = list2json(oDefaultConfig)
-            write(APP_PATH("config/api_keys.json"), cConfigJSON)
+            cConfigJSON = '{
+    "gemini": { "api_key": "' + self.cGeminiAPIKey + '" },
+    "openai": { "api_key": "' + self.cOpenAIAPIKey + '" },
+    "claude": { "api_key": "' + self.cClaudeAPIKey + '" },
+    "openrouter": { "api_key": "' + self.cOpenRouterAPIKey + '" },
+    "default_provider": "' + self.cCurrentProvider + '",
+    "max_tokens": ' + self.nMaxTokens + ',
+    "temperature": ' + self.nTemperature + ',
+    "timeout": ' + self.nTimeout + ',
+    "rate_limit_rpm": ' + self.nRateLimitRPM + ',
+    "max_retries": ' + self.nMaxRetries + '
+}'
+        write(APP_PATH("config/api_keys.json"), cConfigJSON)
             
             see "Created default configuration file: " + APP_PATH("config/api_keys.json") + nl
             see "Please add your API keys to the configuration file." + nl
@@ -202,7 +200,7 @@ class AIClient
     # Send Chat Request
     # ===================================================================
     func sendChatRequest(cMessage, cSystemPrompt, aContext)
-        //try
+        try
             switch cCurrentProvider
                 on "gemini"
                     return sendGeminiRequest(cMessage, cSystemPrompt, aContext)
@@ -230,9 +228,9 @@ class AIClient
             ok
             return oRes
 
-        /*catch
+        catch
             return createErrorResponse("Error in AI request: " + cCatchError)
-        done*/
+        done
     
     # ===================================================================
     # Send Gemini Request (base version, no tools)
@@ -342,7 +340,7 @@ class AIClient
             return createErrorResponse("OpenAI API key not configured")
         ok
         
-        //try
+        try
             # Build messages array
             aMessages = []
             
@@ -377,9 +375,9 @@ class AIClient
             
             return parseOpenAIResponse(cResponse)
             
-       /* catch
+        catch
             return createErrorResponse("OpenAI request failed: " + cCatchError)
-        done*/
+        done
     
     # ===================================================================
     # Send Claude Request
@@ -389,7 +387,7 @@ class AIClient
             return createErrorResponse("Claude API key not configured")
         ok
         
-       // try
+        try
             # Build messages array
             aMessages = []
             
@@ -425,9 +423,9 @@ class AIClient
             
             return parseClaudeResponse(cResponse)
             
-        /* catch
+         catch
             return createErrorResponse("Claude request failed: " + cCatchError)
-        done*/
+        done
 
     # ===================================================================
     # Send OpenRouter Request
