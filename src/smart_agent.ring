@@ -528,7 +528,7 @@ class SmartAgent
                     bCanExecute = false
                     return [:success = false, :error = "CANCELLED: The user denied permission.", :message = ""]
                 elseif nAuthRes = 2
-                    bSessionAuthorized = true
+                    setSessionAuthorized(true)
                 ok
             ok
         ok

@@ -223,7 +223,7 @@ func getFullPath cPath
 func isSensitiveToolCheck cName
     aSensitive = ["write_file", "delete_file", "run_ring_code", 
                   "execute_command", "git_commit", "create_project", 
-                  "replace_file_content"]
+                  "replace_file_content", "evolve_new_tool", "delegate_task"]
     return find(aSensitive, cName) > 0
 
 # List of tools that take file paths as parameters

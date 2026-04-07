@@ -146,13 +146,10 @@ class CoreAgent
         nMessageCount = 0
         
         # Reset advanced subsystems for clean session
-        if oSmartAgent.oTelemetry != null
-            oSmartAgent.oTelemetry.reset()
+        if oSmartAgent != null
+            if oSmartAgent.oTelemetry != null oSmartAgent.oTelemetry.reset() ok
+            oSmartAgent.setSessionAuthorized(false)
         ok
-        if oSmartAgent.oSecurityLayer != null
-            oSmartAgent.oSecurityLayer.revoke()
-        ok
-        oSmartAgent.bSessionAuthorized = false
         
         oLogger.info("New session started: " + oSmartAgent.cSessionId)
         return oSmartAgent.cSessionId

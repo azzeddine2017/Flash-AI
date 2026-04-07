@@ -719,6 +719,11 @@ class AgentTools
             oSubAgent.init()
             oSubAgent.nAgentDepth = nDepth + 1
             
+            # Inherit authorization status for sub-task
+            if bAuthorized
+                oSubAgent.setSessionAuthorized(true)
+            ok
+            
             # Disable UI outputs for headless operation to prevent console spam
             oSubAgent.setUIManager(NULL)
             
