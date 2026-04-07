@@ -99,9 +99,10 @@ class SecurityLayer
             return [false, "Critical tool '" + cToolName + "' requires /authorize", cRisk]
         ok
 
-        # High-risk tools log a warning but are allowed (UI confirmation handles these)
+        # High-risk tools also require authorization (defense in depth)
         if cRisk = "high" and not bAuthorized
-            logAudit(cToolName, "FLAGGED (high-risk, needs confirmation) | " + cParamSummary, "warn")
+            logAudit(cToolName, "BLOCKED (unauthorized high-risk tool) | " + cParamSummary, "warn")
+            return [false, "High-risk tool '" + cToolName + "' requires user confirmation or /authorize", cRisk]
         ok
 
         # All tools: log the execution

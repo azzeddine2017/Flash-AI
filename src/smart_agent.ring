@@ -119,21 +119,30 @@ class SmartAgent
     func analyzeRequestType(cMessage)
         cLowerMessage = lower(cMessage)
         
-        # File operations
+        # File operations — EN + AR
         if substr(cLowerMessage, "write file") or substr(cLowerMessage, "save") or
-           substr(cLowerMessage, "create file") or substr(cLowerMessage, "edit file")
+           substr(cLowerMessage, "create file") or substr(cLowerMessage, "edit file") or
+           substr(cMessage, "اكتب ملف") or substr(cMessage, "احفظ") or
+           substr(cMessage, "انشئ ملف") or substr(cMessage, "عدل ملف")
             return "file_operation"
         ok
         
-        # Code analysis
+        # Code analysis — EN + AR
         if substr(cLowerMessage, "analyze") or substr(cLowerMessage, "check") or
-           substr(cLowerMessage, "review") or substr(cLowerMessage, "debug")
+           substr(cLowerMessage, "review") or substr(cLowerMessage, "debug") or
+           substr(cMessage, "حلل") or substr(cMessage, "افحص") or
+           substr(cMessage, "راجع") or substr(cMessage, "خطأ") or
+           substr(cMessage, "مشكله") or substr(cMessage, "مشكلة") or
+           substr(cMessage, "اكتشف") or substr(cMessage, "تحليل") or
+           substr(cLowerMessage, "bug") or substr(cMessage, "حل")
             return "code_analysis"
         ok
         
-        # Project management
+        # Project management — EN + AR
         if substr(cLowerMessage, "project") or substr(cLowerMessage, "create") or
-           substr(cLowerMessage, "scaffold") or substr(cLowerMessage, "init")
+           substr(cLowerMessage, "scaffold") or substr(cLowerMessage, "init") or
+           substr(cMessage, "مشروع") or substr(cMessage, "انشئ") or
+           substr(cMessage, "هيكل")
             return "project_management"
         ok
         
@@ -206,6 +215,7 @@ class SmartAgent
             nMaxIterations = 25
             nIteration = 0
             aToolsUsed = []
+            nRequestTokens = 0  # Per-request token counter (reset each request)
             
             if oStateMachine != null oStateMachine.transition(AGENT_CALLING_LLM) ok
 
@@ -237,7 +247,7 @@ class SmartAgent
                     return createErrorResponse("AI request failed: " + oAIResponse[:error])
                 ok
                 
-                updateCurrentTokenCount(oAIResponse)
+                nRequestTokens = updateCurrentTokenCount(oAIResponse, nRequestTokens)
                 displayAgentThoughtAndMessage(oAIResponse)
                 
                 cResponseType = getValueFromList(oAIResponse, "type", "text")
@@ -249,7 +259,7 @@ class SmartAgent
                             # AI wants to modify something or use mixed tools - CATEGORICAL STOP
                             if oStateMachine != null oStateMachine.transition(AGENT_AWAITING_APPROVAL) ok
                             bWaitingForApproval = true
-                            oFinalRes = finalizeAgentResponse(oAIResponse, aToolsUsed, oContextMap, nIteration)
+                            oFinalRes = finalizeAgentResponse(oAIResponse, aToolsUsed, oContextMap, nIteration, nRequestTokens)
                             oFinalRes[:message] += nl + nl + "🛡️ [ PROTOCOL STOP ] The agent has a plan but attempted writing tool(s)." + nl + "Use /execute to authorize the transition or /auto to proceed."
                             return oFinalRes
                         ok
@@ -258,7 +268,7 @@ class SmartAgent
                         # No tool call, just final analysis/plan
                         if oStateMachine != null oStateMachine.transition(AGENT_AWAITING_APPROVAL) ok
                         bWaitingForApproval = true
-                        oFinalRes = finalizeAgentResponse(oAIResponse, aToolsUsed, oContextMap, nIteration)
+                        oFinalRes = finalizeAgentResponse(oAIResponse, aToolsUsed, oContextMap, nIteration, nRequestTokens)
                         oFinalRes[:message] += nl + nl + "🏁 [ PLAN COMPLETE ] Review the analysis above. Use /execute to proceed with implementation."
                         return oFinalRes
                     ok
@@ -289,10 +299,15 @@ class SmartAgent
                 ok
                 
                 if oStateMachine != null oStateMachine.transition(AGENT_FINALIZING) ok
-                return finalizeAgentResponse(oAIResponse, aToolsUsed, oContextMap, nIteration)
+                return finalizeAgentResponse(oAIResponse, aToolsUsed, oContextMap, nIteration, nRequestTokens)
             end
             
-            return createSuccessResponse("[ FLASH_AI ] Tools executed successfully.")
+            # Fallback response if loop exits without explicit final response
+            oFinal = finalizeAgentResponse(oAIResponse, aToolsUsed, oContextMap, nIteration, nRequestTokens)
+            if oFinal[:message] = ""
+                oFinal[:message] = "[ FLASH_AI ] Tools executed successfully."
+            ok
+            return oFinal
 
         catch
             if oStateMachine != null oStateMachine.transition(AGENT_ERROR) ok
@@ -367,6 +382,19 @@ class SmartAgent
         
         # Add past context array
         aContext = oContextMap[:context_array]
+        
+        # FIX: Remove the last 'user' message from context to avoid duplication,
+        # because the current user message will be added explicitly below.
+        if type(aContext) = "LIST" and len(aContext) > 0
+            oLastCtx = aContext[len(aContext)]
+            if type(oLastCtx) = "LIST"
+                cLastRole = self.oAIClient.getValue(oLastCtx, "role", "")
+                if cLastRole = "user"
+                    del(aContext, len(aContext))
+                ok
+            ok
+        ok
+        
         if type(aContext) = "LIST"
             for oItem in aContext
                 if type(oItem) != "LIST" loop ok
@@ -418,11 +446,41 @@ class SmartAgent
             next
         ok
         
-        # Add the current user message
+        # Add the current user message (explicitly, after deduplication)
         cUsrMsg = cLangHint + nl + oContextMap[:user_message]
         Add(aConversation, [ ["role", "user"], ["parts", [ [["text", cUsrMsg]] ] ] ])
         
-        return aConversation
+        # ============================================================
+        # CRITICAL: Enforce strict role alternation for Gemini API
+        # Gemini requires user→model→user→model turns. Consecutive
+        # same-role turns cause the API to ignore earlier context.
+        # Merge consecutive same-role turns by combining their parts.
+        # ============================================================
+        aFinal = []
+        for i = 1 to len(aConversation)
+            oTurn = aConversation[i]
+            if type(oTurn) != "LIST" or len(oTurn) < 2
+                Add(aFinal, oTurn)
+                loop
+            ok
+            cRole = oTurn[1][2]
+            
+            if len(aFinal) > 0
+                cPrevRole = aFinal[len(aFinal)][1][2]
+                if cRole = cPrevRole and cRole != "function"
+                    # Merge: append this turn's parts into the previous turn
+                    aPrevParts = aFinal[len(aFinal)][2][2]
+                    aNewParts = oTurn[2][2]
+                    for oPart in aNewParts
+                        Add(aPrevParts, oPart)
+                    next
+                    loop  # Skip adding as separate turn
+                ok
+            ok
+            Add(aFinal, oTurn)
+        next
+        
+        return aFinal
 
     func dispatchToProvider(oContextMap, aConversation, cMessage)
         if isObject(self.oAIClient) and self.oAIClient.cCurrentProvider = "openrouter"
@@ -434,13 +492,15 @@ class SmartAgent
             return self.oAIClient.sendChatRequest(cMessage, oContextMap[:system_prompt], oContextMap[:context_array])
         ok
 
-    func updateCurrentTokenCount(oAIResponse)
+    func updateCurrentTokenCount(oAIResponse, nRequestTokens)
         nBatchTokens = oAIResponse[:total_tokens]
         if nBatchTokens = NULL or type(nBatchTokens) != "NUMBER" 
             nBatchTokens = 0 
         ok
+        nRequestTokens += nBatchTokens
         self.nTotalTokens += nBatchTokens
         self.oAIClient.addTokens(nBatchTokens)
+        return nRequestTokens
 
     func displayAgentThoughtAndMessage(oAIResponse)
         cThoughtContent = oAIResponse[:thought]
@@ -498,7 +558,41 @@ class SmartAgent
             ok
         ok
 
-        if bCanExecute and oSecurityLayer != null
+        # --- Step 1: User Confirmation (must come BEFORE SecurityLayer) ---
+        bUserApprovedThisTool = false
+        if bCanExecute and isSensitiveToolCheck(cToolName)
+            if not bSessionAuthorized
+                nAuthRes = 1  # Default: allow (overridden below)
+                if oUIManager != null
+                    nAuthRes = oUIManager.askConfirmation(cToolName, cDetails)
+                else
+                    # CLI Fallback — prompt user directly in terminal
+                    see nl + "⚠️  [SECURITY] Sensitive tool: " + cToolName + nl
+                    see "   Details: " + cDetails + nl
+                    see "   Type 'yes' to approve, 'always' for session-wide, or anything else to deny: "
+                    give cAuthInput
+                    cAuthInput = trim(lower(cAuthInput))
+                    if cAuthInput = "yes" or cAuthInput = "y"
+                        nAuthRes = 1
+                    elseif cAuthInput = "always" or cAuthInput = "all"
+                        nAuthRes = 2
+                    else
+                        nAuthRes = 0
+                    ok
+                ok
+                if nAuthRes = 0
+                    bCanExecute = false
+                    return [:success = false, :error = "CANCELLED: The user denied permission.", :message = ""]
+                elseif nAuthRes = 2
+                    setSessionAuthorized(true)
+                elseif nAuthRes = 1
+                    bUserApprovedThisTool = true
+                ok
+            ok
+        ok
+
+        # --- Step 2: SecurityLayer Validation (skipped if user just approved) ---
+        if bCanExecute and oSecurityLayer != null and not bUserApprovedThisTool
             aSecCheck = oSecurityLayer.validateToolExecution(cToolName, aParams)
             if not aSecCheck[1]
                 bCanExecute = false
@@ -506,6 +600,7 @@ class SmartAgent
             ok
         ok
 
+        # --- Step 3: Path Safety Validation ---
         if bCanExecute and isPathTool(cToolName)
             aPathIndices = [1]
             if cToolName = "grep_search" or cToolName = "search_in_files" aPathIndices = [2] ok
@@ -519,18 +614,6 @@ class SmartAgent
                     ok
                 ok
             next
-        ok
-
-        if bCanExecute and isSensitiveToolCheck(cToolName) and oUIManager != null
-            if not bSessionAuthorized
-                nAuthRes = oUIManager.askConfirmation(cToolName, cDetails)
-                if nAuthRes = 0
-                    bCanExecute = false
-                    return [:success = false, :error = "CANCELLED: The user denied permission.", :message = ""]
-                elseif nAuthRes = 2
-                    setSessionAuthorized(true)
-                ok
-            ok
         ok
 
         if bCanExecute
@@ -553,7 +636,11 @@ class SmartAgent
                     else
                         cFirstParamVal = "" + aParams[1]
                     ok
-                    oUIManager.displayToolStats(cFirstParamVal, oToolResult[:added], oToolResult[:removed])
+                    if oUIManager != null
+                        oUIManager.displayToolStats(cFirstParamVal, oToolResult[:added], oToolResult[:removed])
+                    else
+                        see "   [STATS] " + cFirstParamVal + " | +" + oToolResult[:added] + " / -" + oToolResult[:removed] + nl
+                    ok
                 ok
                 return [:success = true, :message = cResultText, :error = "", :tool_name = cToolName, :params = aParams]
             else
@@ -627,21 +714,23 @@ class SmartAgent
         ok
         return aConversation
 
-    func finalizeAgentResponse(oAIResponse, aToolsUsed, oContextMap, nIteration)
+    func finalizeAgentResponse(oAIResponse, aToolsUsed, oContextMap, nIteration, nRequestTokens)
         cFinalResponse = oAIResponse[:message]
         cThoughtContent = oAIResponse[:thought]
         
-        self.oContextEngine.addToHistory("assistant", cFinalResponse, "ai_response")
-        
+        # Append tool usage note to the assistant response itself
+        # (NOT as a separate "system" message — that breaks Gemini's turn alternation)
         if len(aToolsUsed) > 0
-            cToolsSummary = "[System Note: Agent used "
+            cToolsSummary = "[Tools used: "
             for i = 1 to len(aToolsUsed)
                 cToolsSummary += aToolsUsed[i]
-                if i < len(aToolsUsed)  cToolsSummary += " and "  ok
+                if i < len(aToolsUsed)  cToolsSummary += ", "  ok
             next
-            cToolsSummary += " to fulfill this request]"
-            self.oContextEngine.addToHistory("system", cToolsSummary, "system_note")
+            cToolsSummary += "]"
+            cFinalResponse += nl + cToolsSummary
         ok
+        
+        self.oContextEngine.addToHistory("assistant", cFinalResponse, "ai_response")
 
         if oTelemetry != null and oContextMap[:loop_start] > 0
             oTelemetry.recordLoop(cSessionId, nIteration, oContextMap[:loop_start], len(aToolsUsed))
@@ -649,7 +738,7 @@ class SmartAgent
 
         oResult = createSuccessResponse(cFinalResponse)
         oResult[:thought] = cThoughtContent
-        oResult[:total_tokens] = nTotalTokens
+        oResult[:total_tokens] = nRequestTokens  # Per-request tokens, NOT cumulative
         
         saveHistory()
         if oLongTermMemory != null try oLongTermMemory.save() catch done ok

@@ -467,9 +467,23 @@ class AIClient
             next
         ok
         
-        # Add user message ONLY if provided (not provided during agentic loop iterations)
+        # Add user message ONLY if provided AND not already the last message in context
         if cMessage != ""
-            Add(aMessages, [ ["role", "user"], ["content", cMessage] ])
+            # Check if the last context message is already this user message (avoid duplication)
+            bAlreadyInContext = false
+            if len(aMessages) > 0
+                oLastMsg = aMessages[len(aMessages)]
+                if type(oLastMsg) = "LIST"
+                    cLastRole = getValue(oLastMsg, "role", "")
+                    cLastContent = getValue(oLastMsg, "content", "")
+                    if cLastRole = "user" and cLastContent = cMessage
+                        bAlreadyInContext = true
+                    ok
+                ok
+            ok
+            if not bAlreadyInContext
+                Add(aMessages, [ ["role", "user"], ["content", cMessage] ])
+            ok
         ok
         
         # Build request JSON manually (safest way to avoid R24/JSON issues)
@@ -530,6 +544,7 @@ class AIClient
             nRespPromptTokens     = getValue(oUsage, "prompt_tokens", 0)
             nRespCandidatesTokens = getValue(oUsage, "completion_tokens", 0)
             nRespTotalTokens      = getValue(oUsage, "total_tokens", 0)
+            if nRespTotalTokens = 0 nRespTotalTokens = estimateTokens(cResponse) ok
 
             # Extract choices
             aChoices = getValue(oData, "choices", [])
@@ -578,6 +593,10 @@ class AIClient
                     ]
                 ok
 
+                if nRespTotalTokens = 0 
+                   nRespTotalTokens = estimateTokens(cContent) + estimateTokens(cReasoning) + 100 # Rough prompt overhead
+                ok
+                
                 return [
                     :success = true,
                     :type = "text",
@@ -591,12 +610,10 @@ class AIClient
                     :prompt_tokens = nRespPromptTokens,
                     :candidates_tokens = nRespCandidatesTokens,
                     :total_tokens = nRespTotalTokens,
-                    :parts = [],
+                     :parts = [],
                     :all_parts = []
                 ]
             ok
-
-
         catch
             return createErrorResponse("Failed to parse OpenRouter response: " + cCatchError)
         done
@@ -758,6 +775,7 @@ class AIClient
         nRespPromptTokens     = getValue(oUsage, "promptTokenCount", 0)
         nRespCandidatesTokens = getValue(oUsage, "candidatesTokenCount", 0)
         nRespTotalTokens      = getValue(oUsage, "totalTokenCount", 0)
+        if nRespTotalTokens = 0 nRespTotalTokens = estimateTokens(cResponse) ok
 
         # Handle API Error Object
         oError = getValue(oResponse, "error", NULL)
@@ -812,6 +830,10 @@ class AIClient
             ok
         next
 
+        if nRespTotalTokens = 0 
+            nRespTotalTokens = estimateTokens(cTotalText) + estimateTokens(cTotalThought) + 200 # Context overhead
+        ok
+
         # Decide what to return
         if oFirstFuncCall != NULL
             cFuncName = getValue(oFirstFuncCall, "name", "")
@@ -863,16 +885,18 @@ class AIClient
     func parseOpenAIResponse(cResponse)
         try
             oResponse = json2list(cResponse)
-
             if type(oResponse) = "LIST" and len(oResponse) > 0
                 oData = oResponse[1]
-
                 # Check for error
                 if find(oData, "error")
                     oError = getValue(oData, "error", [])
                     cErrorMsg = getValue(oError, "message", "Unknown error")
                     return createErrorResponse("OpenAI API error: " + cErrorMsg)
                 ok
+                # Extract usage
+                oUsage = getValue(oData, "usage", [])
+                nTotalT = getValue(oUsage, "total_tokens", 0)
+                if nTotalT = 0 nTotalT = estimateTokens(cResponse) ok
 
                 # Extract content
                 aChoices = getValue(oData, "choices", [])
@@ -880,12 +904,18 @@ class AIClient
                     oChoice = aChoices[1]
                     oMessage = getValue(oChoice, "message", [])
                     cContent = getValue(oMessage, "content", "")
-                    return createSuccessResponse(cContent)
+                    
+                    if nTotalT = 0 nTotalT = estimateTokens(cContent) + 150 ok
+
+                    return [
+                        :success = true,
+                        :message = cContent,
+                        :total_tokens = nTotalT,
+                        :error = ""
+                    ]
                 ok
             ok
-
             return createErrorResponse("Invalid OpenAI response format")
-
         catch
             return createErrorResponse("Failed to parse OpenAI response: " + cCatchError)
         done
@@ -896,28 +926,38 @@ class AIClient
     func parseClaudeResponse(cResponse)
         try
             oResponse = json2list(cResponse)
-
             if type(oResponse) = "LIST" and len(oResponse) > 0
                 oData = oResponse[1]
-
                 # Check for error
                 if find(oData, "error")
                     oError = getValue(oData, "error", [])
                     cErrorMsg = getValue(oError, "message", "Unknown error")
                     return createErrorResponse("Claude API error: " + cErrorMsg)
                 ok
+                # Extract usage
+                oUsage = getValue(oData, "usage", [])
+                nInput = getValue(oUsage, "input_tokens", 0)
+                nOutput = getValue(oUsage, "output_tokens", 0)
+                nTotalT = nInput + nOutput
+                if nTotalT = 0 nTotalT = estimateTokens(cResponse) ok
 
                 # Extract content
                 aContent = getValue(oData, "content", [])
                 if type(aContent) = "LIST" and len(aContent) > 0
                     oContentItem = aContent[1]
                     cText = getValue(oContentItem, "text", "")
-                    return createSuccessResponse(cText)
+                    
+                    if nTotalT = 0 nTotalT = estimateTokens(cText) + 200 ok
+
+                    return [
+                        :success = true,
+                        :message = cText,
+                        :total_tokens = nTotalT,
+                        :error = ""
+                    ]
                 ok
             ok
-
             return createErrorResponse("Invalid Claude response format")
-
         catch
             return createErrorResponse("Failed to parse Claude response: " + cCatchError)
         done
