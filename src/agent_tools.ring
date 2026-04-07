@@ -197,24 +197,48 @@ class AgentTools
     # Create Tool Definition (full - with parameter descriptions)
     # ===================================================================
     func createToolFull(cName, cDesc, aParamDefs, cCategory)
-        # aParamDefs = list of [name, description, type] triples
+        # aParamDefs = list of [name, description, type] triples 
+        # OR list of objects [ [:name="", :desc="", :type=""], ... ]
         oTool = new stdclass
         oTool.name = cName
         oTool.description = cDesc
         
-        # Extract plain parameter names list (backward compat)
+        # Extract plain parameter names list
         aParamNames = []
+        aFinalDefs = [] # Normalized to [name, desc, type] triples
+        
         if type(aParamDefs) = "LIST"
             for aDef in aParamDefs
-                # If nested, unwrap one level
-                if type(aDef) = "LIST" and len(aDef) > 0
-                    if type(aDef[1]) = "LIST" aDef = aDef[1] ok
-                    aParamNames + ("" + aDef[1])
+                cParamName = ""
+                cParamDesc = ""
+                cParamType = "string"
+                
+                # Case 1: Triple [name, desc, type]
+                if type(aDef) = "LIST" and len(aDef) >= 3
+                    cParamName = "" + aDef[1]
+                    cParamDesc = "" + aDef[2]
+                    cParamType = "" + aDef[3]
+                # Case 2: Object-style list (association list of [key, val])
+                elseif type(aDef) = "LIST" and len(aDef) > 0 and type(aDef[1]) = "LIST"
+                    cParamName = getValueFromList(aDef, "name", "")
+                    cParamDesc = getValueFromList(aDef, "desc", "")
+                    if cParamDesc = "" cParamDesc = getValueFromList(aDef, "description", "") ok
+                    cParamType = getValueFromList(aDef, "type", "string")
+                # Case 3: Pair [name, desc] (positional or partial)
+                elseif type(aDef) = "LIST" and len(aDef) = 2
+                    cParamName = "" + aDef[1]
+                    cParamDesc = "" + aDef[2]
+                ok
+                
+                if trim(cParamName) != ""
+                    Add(aParamNames, trim(cParamName))
+                    Add(aFinalDefs, [trim(cParamName), cParamDesc, cParamType])
                 ok
             next
         ok
+        
         oTool.parameters = aParamNames
-        oTool.paramDescriptions = aParamDefs
+        oTool.paramDescriptions = aFinalDefs
         oTool.category = cCategory
         return oTool
 
@@ -619,17 +643,11 @@ class AgentTools
             oNewTool = createToolFull(cToolName, cDescription, aParams, "custom_tool")
             Add(aAvailableTools, oNewTool)
 
+            # Ensure normalized triple-style params for metadata saving
+            aTripleParams = oNewTool.paramDescriptions
+            
             # Save and Hot-Reload
             cFilePath = APP_PATH("custom_tools/" + cToolName + ".ring")
-            
-            # Ensure directory exists
-            if not dirExists(APP_PATH("custom_tools"))
-                if iswindows()
-                    makedir(APP_PATH("custom_tools"))
-                else
-                    makedir(APP_PATH("custom_tools"))
-                ok
-            ok
             
             write(cFilePath, cRingCode)
             
@@ -637,7 +655,7 @@ class AgentTools
             oMetadata = [
                 ["name", cToolName],
                 ["desc", cDescription],
-                ["params", aParams]
+                ["params", aTripleParams]
             ]
             write(APP_PATH("custom_tools/" + cToolName + ".json"), jsonEncodeValue(oMetadata))
             
