@@ -26,7 +26,7 @@ class AIClient
     cOpenRouterEndpoint = "https://openrouter.ai/api/v1/chat/completions"
     
     # Request settings
-    nTimeout = 30
+    nTimeout = 60
     nMaxTokens = 4096
     nTemperature = 0.7
     
@@ -200,7 +200,7 @@ class AIClient
     # Send Chat Request
     # ===================================================================
     func sendChatRequest(cMessage, cSystemPrompt, aContext)
-        try
+        //try
             switch cCurrentProvider
                 on "gemini"
                     return sendGeminiRequest(cMessage, cSystemPrompt, aContext)
@@ -228,9 +228,9 @@ class AIClient
             ok
             return oRes
 
-        catch
+        /*catch
             return createErrorResponse("Error in AI request: " + cCatchError)
-        done
+        done*/
     
     # ===================================================================
     # Send Gemini Request (base version, no tools)
@@ -281,7 +281,7 @@ class AIClient
     # cConvJSON = pre-built JSON array string (NOT a Ring list)
     # cFuncDeclsJSON = JSON string of function declarations
     # ===================================================================
-    func sendGeminiConversation(cConvJSON, cFuncDeclsJSON)
+    /*func sendGeminiConversation(cConvJSON, cFuncDeclsJSON)
         if self.cGeminiAPIKey = "" or self.cGeminiAPIKey = "YOUR_GEMINI_API_KEY_HERE"
             return createSuccessResponse("I am in demo mode. Add your API key in config/api_keys.json")
         ok
@@ -321,6 +321,75 @@ class AIClient
                 end
             ok
         ok
+        return oRes
+    */
+
+    # ===================================================================
+    # Send multi-turn conversation with tools (Advanced Reliability Ver)
+    # ===================================================================
+    func sendGeminiConversation(cConvJSON, cFuncDeclsJSON)
+        if self.cGeminiAPIKey = "" or self.cGeminiAPIKey = "YOUR_GEMINI_API_KEY_HERE"
+            return createSuccessResponse("I am in demo mode. Add your API key in config/api_keys.json")
+        ok
+ 
+        cTempStr = self.nTemperature
+        cTokStr  = self.nMaxTokens
+
+        # بناء الطلب JSON
+        if cFuncDeclsJSON != "" and cFuncDeclsJSON != null and len(cFuncDeclsJSON) > 2
+            if left(trim(cConvJSON), 1) != "[" cConvJSON = "[" + cConvJSON + "]" ok
+            cRequestJSON = '{"contents":' + cConvJSON + ',' +
+                           '"tools":[{"functionDeclarations":' + cFuncDeclsJSON + '}],' +
+                           '"generationConfig":{"temperature":' + cTempStr + ',"maxOutputTokens":' + cTokStr + '}}'
+        else
+            if left(trim(cConvJSON), 1) != "[" cConvJSON = "[" + cConvJSON + "]" ok
+            cRequestJSON = '{"contents":' + cConvJSON + ',' +
+                           '"generationConfig":{"temperature":' + cTempStr + ',"maxOutputTokens":' + cTokStr + '}}'
+        ok
+
+        cURL = self.cGeminiEndpoint + "?key=" + self.cGeminiAPIKey
+        
+        # --- المحاولة الأولى ---
+        cResponse = sendHTTPRequest(cURL, cRequestJSON, "POST", ["Content-Type: application/json"])
+        oRes = parseGeminiResponseFull(cResponse)
+
+        # --- نظام التعافي الذكي (Smart Recovery System) ---
+        # سنقوم بإعادة المحاولة في الحالات التالية:
+        # 1. أخطاء تجاوز الحصص (429 / Quota)
+        # 2. أخطاء الشبكة والوقت المستقطع (Status Code: 0)
+        # 3. أخطاء السيرفر المؤقتة (500 / 503)
+        
+        bNeedRetry = false
+        if oRes[:success] = false
+            cErr = lower(oRes[:error])
+            if substr(cErr, "resource_exhausted") or 
+               substr(cErr, "429") or 
+               substr(cErr, "quota") or
+               substr(cErr, "status code: 0") or     # 🌟 إضافة التعامل مع خطأ الشبكة
+               substr(cErr, "timeout")               # 🌟 إضافة التعامل مع انتهاء الوقت
+                bNeedRetry = true
+            ok
+        ok
+
+        if bNeedRetry and self.nMaxRetries > 0
+            nAttempt = 1
+            while nAttempt <= self.nMaxRetries
+                see "  [!] Retrying due to network/rate limit (Attempt " + nAttempt + "/" + self.nMaxRetries + ")..." + nl
+                
+                # استخدام Exponential Backoff لزيادة وقت الانتظار تدريجياً
+                retryWithBackoff(nAttempt) 
+                
+                cResponse = sendHTTPRequest(cURL, cRequestJSON, "POST", ["Content-Type: application/json"])
+                oRes = parseGeminiResponseFull(cResponse)
+                
+                if oRes[:success] 
+                    see "  [+] Recovery successful!" + nl
+                    exit 
+                ok
+                nAttempt++
+            end
+        ok
+
         return oRes
 
     # ===================================================================

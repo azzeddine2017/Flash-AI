@@ -34,9 +34,14 @@ class Telemetry
     # ===================================================================
     # Tool Execution Metrics
     # ===================================================================
+    # Start Tool Timer
+    # ===================================================================
     func startToolTimer
         return clock()
-
+        
+    # ===================================================================
+    # Record Tool Execution
+    # ===================================================================
     func recordToolExecution cToolName, nStartClock, bSuccess
         nDuration = ((clock() - nStartClock) * 1000) / clockspersecond()
         nTotalToolCalls++

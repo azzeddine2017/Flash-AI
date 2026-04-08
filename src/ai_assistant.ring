@@ -4,8 +4,6 @@
 #       integration is done via SmartAgent + AIClient.
 # ===================================================================
 
-
-
 class AIAssistant
     
     # Private properties

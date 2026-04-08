@@ -2,7 +2,6 @@
 # Agent Tools - Advanced Tools for AI Agent
 # ===================================================================
 
-
 class AgentTools
     
     # Tool registry

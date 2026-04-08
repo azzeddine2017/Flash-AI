@@ -1,3 +1,12 @@
+# ===================================================================
+# Localization - Multi-Language Support System
+# ===================================================================
+# Provides:
+#   - English and Arabic language support
+#   - Easy extension for new languages
+#   - Centralized string management
+# ===================================================================
+
 class Localization
     cLang = "en"
     

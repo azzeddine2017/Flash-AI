@@ -190,7 +190,7 @@ class ContextEngine
     # ===================================================================
     # Build Context for AI Request
     # ===================================================================
-    func buildContext(cRequestType, cCurrentCode)
+    /*func buildContext(cRequestType, cCurrentCode)
         aContext = []
         
         # 1. Weight-Based Sliding Window for History
@@ -279,15 +279,179 @@ class ContextEngine
         aContext + [["role", "system"], ["content", cSystemState]]
         
         return aContext
+*/
+    # ===================================================================
+    # Aggressive Context Pruning (The Token Saver)
+    # ===================================================================
+    func performAggressivePruning()
+        nTotal = len(aConversationHistory)
+        if nTotal < 5 return ok # No need to clean up at the beginning
+
+        for i = 1 to nTotal - 3 # Leave the last 3 messages untouched (to maintain the immediate context)
+            oItem = aConversationHistory[i]
+            cType = getValueFromList(oItem, "type", "")
+            cContent = getValueFromList(oItem, "content", "")
+        
+            # Exception to the plan from deletion 
+            if substr(lower(cContent), "roadmap") or substr(lower(cContent), "step 1")
+                loop # Don't delete the plan!
+            ok
+            
+            # The main goals of pruning are large tool results
+            if cType = "tool_result" or cType = "code_context"
+                cContent = getValueFromList(oItem, "content", "")
+                
+                if len(cContent) > 300
+                    # Convert the large result to a very small "technical summary"
+                    cSummary = "[OLD TOOL RESULT: Executed successfully. Content abridged to save memory. (Original size: " + len(cContent) + " chars)]"
+                    
+                    # Update the content in the array
+                    for j = 1 to len(oItem)
+                        if oItem[j][1] = "content" 
+                            oItem[j][2] = cSummary 
+                            exit 
+                        ok
+                    next
+                ok
+            ok
+            
+            # Pruning the agent's old thoughts
+            if cType = "ai_response"
+                # If the response is old, we delete the large Thought and keep only the final response
+                for j = 1 to len(oItem)
+                    if oItem[j][1] = "thought" and len("" + oItem[j][2]) > 100
+                        oItem[j][2] = "[Previous reasoning pruned]"
+                        exit
+                    ok
+                next
+            ok
+        next
+    ok
 
     # ===================================================================
-    # Text Truncator (Task 2.3)
+    # Build Context for AI Request (Context Intelligence Subsystem)
+    # ===================================================================
+    func buildContext(cRequestType, cCurrentCode)
+        performAggressivePruning()
+        aContext =[]
+        
+        nMaxBudget = 15000
+        nTotalChars = 0
+        aTempHistory =[]
+        
+        nTotalMessages = len(aConversationHistory)
+        
+        # Loop backwards to build context dynamically
+        for i = nTotalMessages to 1 step -1
+            oItem = aConversationHistory[i]
+            cRole = getValueFromList(oItem, "role", "user")
+            cContent = getValueFromList(oItem, "content", "")
+            cType = getValueFromList(oItem, "type", "chat")
+            
+            # [Architectural intelligence here]: Dynamic pruning based on message age 
+            nAge = nTotalMessages - i  # 0 means the latest message
+            
+            if cType = "tool_result"
+                # If the result is old (older than 4 steps), we compress it very hard
+                if nAge > 4
+                    cContent = truncateLongText(cContent, 500) # Hard compression
+                elseif nAge > 1
+                    cContent = truncateLongText(cContent, 2000) # Medium compression
+                else
+                    cContent = truncateLongText(cContent, 4000) # Recent, more space
+                ok
+            ok
+            
+            # User messages are never compressed unless they are very large
+            if cRole = "user"
+                cContent = truncateLongText(cContent, 6000)
+            ok
+
+            if (nTotalChars + len(cContent)) <= nMaxBudget
+                # Update the compressed content in the temporary element
+                oCompressedItem = oItem
+                for j = 1 to len(oCompressedItem)
+                    if oCompressedItem[j][1] = "content" oCompressedItem[j][2] = cContent ok
+                next
+                
+                aTempHistory + oCompressedItem
+                nTotalChars += len(cContent)
+            else
+                # If we reached the maximum, we ensure the first user message (the original request) is included by force!
+                if i > 1
+                    oFirstUserMsg = aConversationHistory[1]
+                    if getValueFromList(oFirstUserMsg, "role", "") = "user"
+                        aTempHistory + oFirstUserMsg
+                    ok
+                ok
+                exit
+            ok
+        next
+        
+        # Restore chronological order
+        for i = len(aTempHistory) to 1 step -1
+            oItem = aTempHistory[i]
+            cRole    = getValueFromList(oItem, "role", "user")
+            cContent = getValueFromList(oItem, "content", "")
+            
+            oMsg = [ ["role", cRole], ["content", cContent] ]
+            
+            # Preserve Tool Call Metadata
+            cID    = getValueFromList(oItem, "tool_call_id", "")
+            if cID != ""  oMsg + ["tool_call_id", cID]  ok
+            
+            cCalls = getValueFromList(oItem, "tool_calls", "")
+            if cCalls != ""  oMsg + ["tool_calls", cCalls]  ok
+
+            aContext + oMsg
+        next
+        
+        # Add project context if available
+        if len(aProjectContext) > 0
+            oProject = aProjectContext[1]
+            cProjectInfo = "Current Project: " + oProject["name"] + nl +
+                          "Description: " + oProject["description"] + nl +
+                          "Files: " + list2str(oProject["files"])
+            
+            aContext + [["role", "system"],["content", cProjectInfo]]
+        ok
+        
+        # Add current code context
+        if cCurrentCode != ""
+            aContext + [["role", "system"], ["content", "Current Code:\n" + cCurrentCode]]
+        ok
+        
+        # Dynamic State Injection
+        cOSName = "Unix"
+        if isWindows()  cOSName = "Windows"  ok
+        
+        cSystemState = "[CURRENT SYSTEM STATE]" + nl +
+                      "Directory: " + currentdir() + nl +
+                      "OS: " + cOSName + nl +
+                      "Date: " + date() + " | Time: " + time()
+        
+        aContext + [["role", "system"], ["content", cSystemState]]
+        
+        return aContext
+
+    # ===================================================================
+    # Smart Text Truncator (Head & Tail Preservation)
     # ===================================================================
     func truncateLongText(cText, nMaxLength)
-        if len(cText) > nMaxLength
-            return left(cText, nMaxLength) + nl + nl + "... [SYSTEM TRUNCATED: Content exceeded maximum length. Use search tools for more specific details.]"
+        if len(cText) <= nMaxLength
+            return cText
         ok
-        return cText
+        
+        # The intelligence here: we keep 30% of the beginning of the text, and 70% of its end (because errors usually appear at the end)
+        nHeadLimit = floor(nMaxLength * 0.3)
+        nTailLimit = floor(nMaxLength * 0.7)
+        
+        cHead = left(cText, nHeadLimit)
+        cTail = right(cText, nTailLimit)
+        
+        cTruncatedMsg = nl + nl + "   ...[ SYSTEM ABRIDGED: " + (len(cText) - nMaxLength) + " characters removed to save context window ] ...   " + nl + nl
+        
+        return cHead + cTruncatedMsg + cTail
     
     # ===================================================================
     # Get System Prompt for Request Type

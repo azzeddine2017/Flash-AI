@@ -1,9 +1,7 @@
-/*
-==============================================================================
-    UI Manager - FLASH AI Deep Agent Style
-    Upgraded with Themes, Localization, and Animated Spinners
-==============================================================================
-*/
+# ===================================================================
+# UI Manager - FLASH AI Deep Agent Style
+# ===================================================================
+    
 
 class Formatter
     func colorizeText cText, cTheme
@@ -597,7 +595,9 @@ class UIManager
         if cWord != "" printCodeWord(cWord, aKw, oTheme) ok
         ? ""
     }
-    
+    # ===================================================================
+    # Print Code Word
+    # ===================================================================
     func printCodeWord cWord, aKw, oTheme {
         bNum = true
         for i = 1 to len(cWord)

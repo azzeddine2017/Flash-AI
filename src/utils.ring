@@ -61,8 +61,10 @@ func jsonEscapeStr cStr
     cStr = substr(cStr, char(9),  char(92)+"t")
     return cStr
 
+# ===================================================================
 # Bulletproof JSON encoder for Ring lists
 # Handles objects (list of [key, value] pairs) and arrays
+# ===================================================================
 func jsonEncodeValue oVal
     if type(oVal) = "NUMBER" return "" + oVal ok
     if type(oVal) = "STRING" 
@@ -209,7 +211,9 @@ func isPathSafeCheck cPath
     ok
     return true
 
+# ===================================================================
 # Get full absolute path and normalize format
+# ===================================================================
 func getFullPath cPath
     cPath = lower(cPath)
     cPath = substr(cPath, "/", "\") # Normalize to backslashes
@@ -251,14 +255,18 @@ func countSubstring cString, cSubString
     end
     return nCount
 
+# ===================================================================
 # Check if text contains Arabic characters
+# ===================================================================
 func hasArabicText cText
     for i = 1 to len(cText)
         if ascii(cText[i]) >= 192 return true ok
     next
     return false
 
+# ===================================================================
 # Simple Markdown to HTML converter for Gui
+# ===================================================================
 func renderMarkdown cText
     if cText = "" or cText = null return "" ok
     cHtml = cText
@@ -279,7 +287,9 @@ func renderMarkdown cText
     ok
     return cHtml
 
+# ===================================================================
 # Ensure a directory exists, create if not
+# ===================================================================
 func ensureDirectoryExists cDir
     if not dirExists(cDir)
         makedir(cDir)
@@ -413,17 +423,21 @@ func validateToolCode cCode
     return [true, "Code passed validation"]
 
 # ===================================================================
-# Token Estimation Utility
+# Token Estimator (Optimized for Arabic & Code)
 # ===================================================================
-
-# Approximate token count for a string (BPE-style estimation).
-# English averages ~4 chars per token, Arabic ~2.5 chars per token.
-func estimateTokens cText
-    if type(cText) != "STRING" or len(cText) = 0 return 0 ok
-    if hasArabicText(cText)
-        return ceil(len(cText) / 2.5)
+func estimateTokens(cText)
+    if type(cText) != "STRING" return 0 ok
+    
+    nLen = len(cText)
+    if nLen = 0 return 0 ok
+    
+    # For English/Code, one token is approximately 4 characters
+    # For Arabic, one token may be only 2 characters due to Unicode
+    if isfunction("hasArabicText") and hasArabicText(cText)
+        return ceil(nLen / 2.5)
     ok
-    return ceil(len(cText) / 4)
+    
+    return ceil(nLen / 4.0)
 
 # ===================================================================
 # Exponential Backoff for Rate Limit Retries
@@ -461,7 +475,9 @@ func createSuccessResultExtended cMessage, nAdded, nRemoved
         :removed = nRemoved,
         :error = ""
     ]
-
+# ===================================================================
+# Error Result
+# ===================================================================
 func createErrorResult cError
     return [
         :success = false,

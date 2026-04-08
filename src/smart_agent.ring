@@ -1,3 +1,11 @@
+# ===================================================================
+# SmartAgent - Centralized Orchestration & Execution Engine
+# ===================================================================
+# Provides:
+#   - Centralized Orchestration & Execution Engine
+# ===================================================================
+
+
 class SmartAgent
     
     # ===================================================================
@@ -9,7 +17,8 @@ class SmartAgent
     oAgentTools = null
     oUIManager = null
     oLogger = null
-    
+    otasktracker
+
     # Advanced subsystems (Phase 1 & Phase 3 integration)
     oSecurityLayer = null
     oTelemetry = null
@@ -39,6 +48,8 @@ class SmartAgent
     cExecutionMode = "auto" # Values: auto, plan, execute
     bWaitingForApproval = false
     
+    cActiveGoal = ""
+
     # ===================================================================
     # Constructor
     # ===================================================================
@@ -59,7 +70,8 @@ class SmartAgent
         oContextIntelligence = new ContextIntelligence(oContextEngine)
         oReflectionEngine = new ReflectionEngine()
         oStateMachine = new AgentStateMachine()
-        
+        oTaskTracker = new TaskTracker
+
         # Ensure required directories exist
         ensureDirectoryExists(APP_PATH("chats"))
         ensureDirectoryExists(APP_PATH("logs"))
@@ -356,6 +368,30 @@ class SmartAgent
 
         nLoopStartClock = 0
         if oTelemetry != null nLoopStartClock = oTelemetry.startAPITimer() ok
+
+        cGoalInjection = ""
+        if self.cActiveGoal != ""
+            cGoalInjection = " [ CURRENT TASK: " + self.cActiveGoal + " ] " + nl
+        ok
+        
+        # Target injection in the System Prompt
+        cSystemPrompt = cGoalInjection + self.oContextEngine.getSystemPrompt(cRequestType)
+
+        cActiveTask = self.oTaskTracker.getNextTask()
+        cRoadmapNote = ""
+        
+        if cActiveTask != ""
+            # Force the agent to know that it is in the middle of a task
+            cRoadmapNote = "---" + nl +
+                        "📋 [SYSTEM NOTIFICATION - ACTIVE TASK]" + nl +
+                        "You are currently executing this specific step: " + cActiveTask + nl +
+                        "If the user says 'اكمل' or 'continue', proceed with this task immediately." + nl +
+                        "---" + nl
+        ok
+
+        # Combining observation with System Prompt
+        cSystemPrompt = cRoadmapNote + self.oContextEngine.getSystemPrompt(cRequestType)
+        
 
         return [
             :full_prompt = cFullPrompt,
@@ -718,6 +754,23 @@ class SmartAgent
         cFinalResponse = oAIResponse[:message]
         cThoughtContent = oAIResponse[:thought]
         
+        #  [The added intelligence]: If the agent suggests a task, we automatically pin it as a goal
+        if nIteration = 1 # In the first thinking cycle
+            if substr(cFinalResponse, "سأقوم بـ") or substr(cFinalResponse, "I will") or substr(cFinalResponse, "خطتي هي")
+                # Extract the first line as a goal
+                aLines = split(cFinalResponse, nl)
+                if len(aLines) > 0
+                    self.setActiveGoal(aLines[1])
+                ok
+            ok
+        ok
+
+        #  If we detect that the agent has set an action plan, we store it in the tracker
+        if substr(cFinalResponse, "1.") and substr(cFinalResponse, "2.")
+            self.oTaskTracker.setRoadmap(cFinalResponse) 
+            see "  [SYSTEM] Roadmap captured and pinned to TaskTracker." + nl
+        ok
+
         # Append tool usage note to the assistant response itself
         # (NOT as a separate "system" message — that breaks Gemini's turn alternation)
         if len(aToolsUsed) > 0
@@ -812,7 +865,14 @@ class SmartAgent
     func getValue(aList, cKey, cDefault)
         return getValueFromList(aList, cKey, cDefault)
 
+     # A function to update the target manually or automatically.
+    func setActiveGoal(cGoal)
+        self.cActiveGoal = trim(cGoal)
+        if self.oLogger != NULL 
+            self.oLogger.info("🎯 Mission Goal Updated: " + self.cActiveGoal)
+        ok
 
+    
     # ===================================================================
     # Utility Functions
     # ===================================================================
@@ -1081,3 +1141,31 @@ class SmartAgent
 
     func generateSessionId()
         return generateUniqueId()
+
+# ===================================================================
+# Task Tracker - Persistent Roadmap Management
+# ===================================================================
+class TaskTracker
+    aTasks = []
+    nCurrentTask = 1
+
+    func setRoadmap(cPlan)
+        # Convert text to task list
+        self.aTasks = split(cPlan, nl)
+        self.nCurrentTask = 1
+        saveTasks()
+
+    func getNextTask()
+        if nCurrentTask <= len(aTasks)
+            return aTasks[nCurrentTask]
+        ok
+        return ""
+
+    func markTaskDone()
+        self.nCurrentTask++
+        saveTasks()
+
+    func saveTasks()
+        # Save to file to ensure it remains even if the program crashes
+        write(APP_PATH("logs/current_roadmap.json"), jsonEncodeRecursive(self.aTasks))
+        write(APP_PATH("logs/current_task_idx.txt"), "" + self.nCurrentTask)
