@@ -783,7 +783,77 @@ class AgentTools
             if substr(cLower, cCore) return true ok
         next
         return false
+    # ===================================================================
+    # Filtered Function Declarations (Gemini)
+    # ===================================================================
+    func getFilteredGeminiJSON(aAllowedTools)
+        cJSON = "["
+        bFirst = true
+        for oTool in aAvailableTools
+            if find(aAllowedTools, oTool.name) = 0 loop ok
+            
+            if not bFirst cJSON += "," ok
+            bFirst = false
+            
+            cJSON += '{"name":"' + oTool.name + '",'
+            cJSON += '"description":"' + oTool.description + '",'
+            cJSON += '"parameters":{"type":"object","properties":{'
+            
+            bFirstProp = true
+            for aDef in oTool.paramDescriptions
+                if not bFirstProp cJSON += "," ok
+                bFirstProp = false
+                cJSON += '"' + aDef[1] + '":{"type":"' + aDef[3] + '","description":"' + aDef[2] + '"}'
+            next
+            
+            cJSON += '},"required":['
+            bFirstReq = true
+            for aDef in oTool.paramDescriptions
+                if not bFirstReq cJSON += "," ok
+                bFirstReq = false
+                cJSON += '"' + aDef[1] + '"'
+            next
+            cJSON += "]}}"
+        next
+        cJSON += "]"
+        return cJSON
 
+    # ===================================================================
+    # Filtered Tools (OpenRouter/OpenAI)
+    # ===================================================================
+    func getFilteredOpenAIJSON(aAllowedTools)
+        cJSON = "["
+        bFirst = true
+        for oTool in aAvailableTools
+            if find(aAllowedTools, oTool.name) = 0 loop ok
+            
+            if not bFirst cJSON += "," ok
+            bFirst = false
+            
+            cJSON += '{"type":"function","function":{'
+            cJSON += '"name":"' + oTool.name + '",'
+            cJSON += '"description":"' + oTool.description + '",'
+            cJSON += '"parameters":{"type":"object","properties":{'
+            
+            bFirstProp = true
+            for aDef in oTool.paramDescriptions
+                if not bFirstProp cJSON += "," ok
+                bFirstProp = false
+                cJSON += '"' + aDef[1] + '":{"type":"' + aDef[3] + '","description":"' + aDef[2] + '"}'
+            next
+            
+            cJSON += '},"required":['
+            bFirstReq = true
+            for aDef in oTool.paramDescriptions
+                if not bFirstReq cJSON += "," ok
+                bFirstReq = false
+                cJSON += '"' + aDef[1] + '"'
+            next
+            cJSON += "]}}}"
+        next
+        cJSON += "]"
+        return cJSON
+        
 class stdclass
     name 
     description

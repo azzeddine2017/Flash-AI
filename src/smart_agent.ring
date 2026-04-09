@@ -124,43 +124,60 @@ class SmartAgent
             return createErrorResponse("Request processing failed: " + cCatchError)
         done
 
-    
     # ===================================================================
-    # Analyze Request Type
+    # Advanced Request Type Analyzer (Context-Aware Intent Detection)
     # ===================================================================
     func analyzeRequestType(cMessage)
-        cLowerMessage = lower(cMessage)
+        cMsg = lower(trim(cMessage))
         
-        # File operations — EN + AR
-        if substr(cLowerMessage, "write file") or substr(cLowerMessage, "save") or
-           substr(cLowerMessage, "create file") or substr(cLowerMessage, "edit file") or
-           substr(cMessage, "اكتب ملف") or substr(cMessage, "احفظ") or
-           substr(cMessage, "انشئ ملف") or substr(cMessage, "عدل ملف")
-            return "file_operation"
+        # 1. Self-Evolution Intent (Highest Priority)
+        # Keywords: evolve, build tool, create tool, مهارة جديدة, طور أداة
+        if hasKeywords(cMsg, ["evolve", "new tool", "build tool", "create tool", "طور", "أداة", "مهارة"])
+            return "self_evolution"
         ok
-        
-        # Code analysis — EN + AR
-        if substr(cLowerMessage, "analyze") or substr(cLowerMessage, "check") or
-           substr(cLowerMessage, "review") or substr(cLowerMessage, "debug") or
-           substr(cMessage, "حلل") or substr(cMessage, "افحص") or
-           substr(cMessage, "راجع") or substr(cMessage, "خطأ") or
-           substr(cMessage, "مشكله") or substr(cMessage, "مشكلة") or
-           substr(cMessage, "اكتشف") or substr(cMessage, "تحليل") or
-           substr(cLowerMessage, "bug") or substr(cMessage, "حل")
-            return "code_analysis"
-        ok
-        
-        # Project management — EN + AR
-        if substr(cLowerMessage, "project") or substr(cLowerMessage, "create") or
-           substr(cLowerMessage, "scaffold") or substr(cLowerMessage, "init") or
-           substr(cMessage, "مشروع") or substr(cMessage, "انشئ") or
-           substr(cMessage, "هيكل")
+
+        # 2. Project & Git Operations
+        # Keywords: project, scaffold, init, git, commit, push, مشروع, هيكل, مستودع
+        if hasKeywords(cMsg, ["project", "scaffold", "init", "git", "commit", "push", "status", "مشروع", "هيكل", "مستودع", "رفع"])
             return "project_management"
         ok
-        
-        # Default to general chat
+
+        # 3. Code Analysis & Execution
+        # Keywords: analyze, debug, review, format, run, test, حلل, افحص, راجع, شغل
+        if hasKeywords(cMsg, ["analyze", "debug", "review", "format", "run", "test", "fix", "حلل", "افحص", "راجع", "صلح", "شغل", "اختبار"])
+            return "code_analysis"
+        ok
+
+        # 4. File Operations
+        # Keywords: write, read, delete, create file, edit, save, اكتب, اقرأ, احذف, عدل
+        if hasKeywords(cMsg, ["write", "read", "delete", "create file", "edit", "save", "mkdir", "اكتب", "اقرأ", "احذف", "انشئ", "عدل", "حفظ"])
+            return "file_operation"
+        ok
+
+        # 5. Web & Data Operations
+        # Keywords: url, download, fetch, bitcoin, ويب, رابط, تحميل
+        if hasKeywords(cMsg, ["url", "download", "fetch", "http", "website", "bitcoin", "رابط", "موقع", "ويب", "تحميل"])
+            return "web_operation"
+        ok
+
+        # 6. System & Shell Operations
+        # Keywords: execute, terminal, shell, cmd, نفذ, أمر, تيرمينال
+        if hasKeywords(cMsg, ["execute", "terminal", "shell", "cmd", "command", "system", "نفذ", "أمر", "نظام"])
+            return "system_operation"
+        ok
+
+        # Default: General Chat (Minimal tools will be sent)
         return "general_chat"
-    
+
+    # --- Helper function for keyword matching ---
+    func hasKeywords(cMsg, aKeywords)
+        for word in aKeywords
+            if substr(cMsg, word) > 0
+                return true
+            ok
+        next
+        return false
+
     # ===================================================================
     # Parse Tool Request
     # ===================================================================
@@ -517,13 +534,28 @@ class SmartAgent
         next
         
         return aFinal
-
+        
+    # ===================================================================
+    # Dispatch to Provider
+    # ===================================================================
     func dispatchToProvider(oContextMap, aConversation, cMessage)
-        if isObject(self.oAIClient) and self.oAIClient.cCurrentProvider = "openrouter"
-            return self.oAIClient.sendOpenRouterRequest(cMessage, oContextMap[:system_prompt], oContextMap[:context_array], self.oAgentTools.getOpenAIToolsJSON())
-        elseif isObject(self.oAIClient) and self.oAIClient.cCurrentProvider = "gemini"
+        # 1. Instantiate the Selector (can be moved to init for performance)
+        oSelector = new AdaptiveToolSelector
+        
+        # 2. Get relevant tools based on the current request type
+        cType = oContextMap[:request_type] # Ensure this is passed in the map
+        aRelevant = oSelector.getRelevantTools(cType)
+        
+        if self.oAIClient.cCurrentProvider = "openrouter"
+            # Send only the relevant subset to OpenRouter
+            cToolsJSON = self.oAgentTools.getFilteredOpenAIJSON(aRelevant)
+            return self.oAIClient.sendOpenRouterRequest(cMessage, oContextMap[:system_prompt], oContextMap[:context_array], cToolsJSON)
+            
+        elseif self.oAIClient.cCurrentProvider = "gemini"
+            # Send only the relevant subset to Gemini
+            cToolsJSON = self.oAgentTools.getFilteredGeminiJSON(aRelevant)
             cConvertJSON = jsonEncode(aConversation)
-            return self.oAIClient.sendGeminiConversation(cConvertJSON, self.oAgentTools.getFunctionDeclsJSON())
+            return self.oAIClient.sendGeminiConversation(cConvertJSON, cToolsJSON)
         else
             return self.oAIClient.sendChatRequest(cMessage, oContextMap[:system_prompt], oContextMap[:context_array])
         ok

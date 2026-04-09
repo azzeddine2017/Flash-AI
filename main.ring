@@ -1,7 +1,7 @@
 /*
 ==============================================================================
     FLASH AI - Deep Agent Style CLI
-    Main Entry Point - v2.0
+    Main Entry Point - v3.0
 ==============================================================================
 */
 load "src/loadFiles.ring"
@@ -76,6 +76,9 @@ class oApp
         end
 
         while bRunning {
+            # عرض شريط الحالة قبل المدخلات
+            oUIManager.showStatusBar(oCoreAgent.oSmartAgent.cExecutionMode, oCoreAgent.oSmartAgent.nTotalTokens)
+            
             # deepagents-style prompt: | >
             oUIManager.showPrompt()
 
@@ -103,65 +106,66 @@ class oApp
     }
 
     # ===================================================================
-    # Enhanced Input Handler with history, arrow keys, and shortcuts
+    # Enhanced Input Handler (Zero-Lag Pasting, Tab, and Shadow)
     # ===================================================================
     func handleInput {
         cInput = ""
         nCursorPos = 0
+        cTabPrefix = ""
+        aTabMatches =[]
+        nTabIndex = 0
+        
         while true
-            if kbhit()
+            bNeedsRedraw = false
+            bEnterPressed = false
+            
+            # Buffer Drain: Read all available keystrokes instantly
+            while kbhit()
                 nKey = getKey()
+                
+                # Reset Tab completion state if any key OTHER than TAB is pressed
                 if nKey != 9 and nKey != 224
                     cTabPrefix = ""
-                    aTabMatches = []
+                    aTabMatches =[]
+                    nTabIndex = 0
                 ok
+                
                 switch nKey
                     on KEY_ENTER or nKey = 10 or nKey = 13
-                        # If more characters are available immediately, it's likely a paste
-                        sleep(0.02)
-                        if kbhit()
-                            # Check for \r\n sequence to avoid double newlines
-                            if nKey = 13
-                                nNext = getKey()
-                                # If it was \r followed by \n (10), we only add one newline
-                                if nNext = 10
-                                    cInput += nl
-                                    see nl
-                                    nCursorPos++
-                                    loop
-                                ok
-                                # If it wasn't \n (10), put it into input and continue
-                                cInput += nl + char(nNext)
-                                see nl + char(nNext)
-                                nCursorPos += 2
-                                loop
-                            ok
-                            cInput += nl
-                            see nl
-                            nCursorPos++
-                            loop
-                        ok
-                        nl
-                        exit
+                        bEnterPressed = true
+                        exit # Break the fast read loop to process Enter
+                        
                     on KEY_ESCAPE
                         bRunning = false
-                        exit
+                        return
+                        
                     on 8, 127  # Backspace
                         if nCursorPos > 0
-                            cInput = "" + cInput # Ensure string
-                            if nCursorPos = len(cInput)
-                                cInput = left(cInput, len(cInput)-1)
-                                see char(8) + char(27) + "[K"
-                            else
-                                cInput = left(cInput, nCursorPos-1) + substr(cInput, nCursorPos+1)
-                                replaceInputLine(cInput)
-                                see char(27) + "[" + (len(cInput) - nCursorPos + 1) + "D"
-                            ok
+                            cInput = "" + cInput
+                            cInput = left(cInput, nCursorPos-1) + substr(cInput, nCursorPos+1)
                             nCursorPos--
-                            # Reset Tab State on text change
-                            cTabPrefix = ""
-                            aTabMatches = []
+                            bNeedsRedraw = true
                         ok
+                        
+                    on 9  # TAB Key (Autocomplete)
+                        if len(aTabMatches) = 0
+                            cTabPrefix = cInput
+                            aTabMatches = getTabMatches(cTabPrefix)
+                            nTabIndex = 1
+                        else
+                            # Cycle through matches
+                            nTabIndex++
+                            if nTabIndex > len(aTabMatches) 
+                                nTabIndex = 1 
+                            ok
+                        ok
+                        
+                        if len(aTabMatches) > 0
+                            cInput = aTabMatches[nTabIndex]
+                            nCursorPos = len(cInput)
+                            bNeedsRedraw = true
+                        ok
+                        
                     on 224  # Special key prefix (Windows)
                         if kbhit()
                             nSpecial = getKey()
@@ -169,101 +173,117 @@ class oApp
                                 on 72  # Up arrow - history previous
                                     if len(aCommandHistory) > 0 and nHistoryIndex > 1
                                         nHistoryIndex--
-                                        replaceInputLine(aCommandHistory[nHistoryIndex])
+                                        cInput = aCommandHistory[nHistoryIndex]
                                         nCursorPos = len(cInput)
+                                        bNeedsRedraw = true
                                     ok
                                 on 80  # Down arrow - history next
                                     if nHistoryIndex < len(aCommandHistory)
                                         nHistoryIndex++
-                                        replaceInputLine(aCommandHistory[nHistoryIndex])
+                                        cInput = aCommandHistory[nHistoryIndex]
                                         nCursorPos = len(cInput)
+                                        bNeedsRedraw = true
                                     elseif nHistoryIndex = len(aCommandHistory)
                                         nHistoryIndex++
-                                        replaceInputLine("")
+                                        cInput = ""
                                         nCursorPos = 0
+                                        bNeedsRedraw = true
                                     ok
                                 on 75  # Left arrow
                                     if nCursorPos > 0
                                         nCursorPos--
-                                        see char(8)
+                                        bNeedsRedraw = true
                                     ok
                                 on 77  # Right arrow
                                     if nCursorPos < len(cInput)
-                                        see cInput[nCursorPos+1]
                                         nCursorPos++
+                                        bNeedsRedraw = true
                                     ok
                                 on 71  # Home key
-                                    for i = 1 to nCursorPos
-                                        see char(8)
-                                    next
                                     nCursorPos = 0
+                                    bNeedsRedraw = true
                                 on 79  # End key
-                                    if nCursorPos < len(cInput)
-                                        see substr(cInput, nCursorPos+1)
-                                        nCursorPos = len(cInput)
-                                    ok
+                                    nCursorPos = len(cInput)
+                                    bNeedsRedraw = true
                                 on 83  # Delete key
                                     if nCursorPos < len(cInput)
                                         cInput = left(cInput, nCursorPos) + substr(cInput, nCursorPos+2)
-                                        see char(27) + "[K" + substr(cInput, nCursorPos+1)
-                                        see char(27) + "[" + (len(cInput) - nCursorPos) + "D"
+                                        bNeedsRedraw = true
                                     ok
                             off
                         ok
-                    on 9  # Tab - disabled
-                        # Tab autocomplete removed by user request
+                        
                     other
+                        # Handle Command Menu shortcut on empty line
                         if nKey = 47 and cInput = ""
                             cChoice = handleCommandMenu()
                             if cChoice != ""
                                 cInput = cChoice
                                 nCursorPos = len(cInput)
-                                see cInput
+                                bNeedsRedraw = true
                             ok
                             loop
                         ok
                         
+                        # Normal Character Input
                         if nKey >= 32 and nKey <= 255
-                            cInput = "" + cInput # Ensure string type
-                            
-                            # For Unicode/Arabic safety, we update the buffer and redraw the WHOLE line
-                            # This prevents fragmenting multi-byte characters in the terminal display
-                            if nCursorPos = len(cInput)
-                                cInput += char(nKey)
-                            else
-                                # Insert at cursor position
-                                cInput = left(cInput, nCursorPos) + char(nKey) + substr(cInput, nCursorPos+1)
-                            ok
-                            
+                            cInput = "" + cInput
+                            cInput = left(cInput, nCursorPos) + char(nKey) + substr(cInput, nCursorPos+1)
                             nCursorPos++
-                            replaceInputLine(cInput)
-                            
-                            # Move cursor back if we were inserting in the middle
-                            if nCursorPos < len(cInput)
-                                see char(27) + "[" + (len(cInput) - nCursorPos) + "D"
-                            ok
-                            
-                            # Reset Tab State on text change
-                            cTabPrefix = ""
-                            aTabMatches = []
-                        
-                        
-
+                            bNeedsRedraw = true
                         ok
                 off
+            end 
+            
+            # Process Enter after rendering is skipped
+            if bEnterPressed
+                nl
+                exit 
             ok
-            sleep(0.01) # Reduce CPU usage
+            
+            # Render to screen ONCE per batch of keys
+            if bNeedsRedraw
+                replaceInputLine(cInput, nCursorPos)
+            ok
+            
+            sleep(0.01) # Keep CPU usage low
         end
     }
 
+    # ===================================================================
     # Replace the current input line on screen
-    func replaceInputLine cNewInput {
+    # ===================================================================
+     func replaceInputLine cNewInput, nCursor {
+        # Clear the line entirely and return cursor to column 0
         see char(27) + "[2K" + char(13)
+        
+        # Redraw the prompt prefix (e.g., "| > ")
         oUIManager.showPrompt()
+        
         cInput = cNewInput
         see cInput
-    }
+        
+        # --- Shadow Auto-suggestion Logic ---
+        cShadow = getShadowMatch(cInput)
+        if cShadow != ""
+            # Print shadow text in Dark Grey
+            setColor(DARKGREY)
+            see cShadow
+            resetColor()
+            
+            # Move cursor back by the length of the shadow text
+            see char(27) + "[" + len(cShadow) + "D"
+        ok
+        
+        # --- Maintain actual Cursor Position ---
+        if nCursor < len(cInput)
+            nDiff = len(cInput) - nCursor
+            see char(27) + "
 
+            " + nDiff + "D"
+        ok
+    }
+    
     # ===================================================================
     # Command History Management
     # ===================================================================
@@ -465,7 +485,7 @@ class oApp
                 showConfig()
                 return
             on "/authorize"
-                oSmartAgent.setSessionAuthorized(true)
+                oCoreAgent.oSmartAgent.setSessionAuthorized(true)
                 oUIManager.showSuccess("Full session authorization granted. Tools will execute without confirmation.")
                 return
             
@@ -476,17 +496,17 @@ class oApp
                 handleMultiLineInput()
                 return
             on "/plan"
-                oSmartAgent.cExecutionMode = "plan"
+                oCoreAgent.oSmartAgent.cExecutionMode = "plan"
                 oUIManager.showSuccess("Mode changed to [ PLANNING ]. Agent will pause for approval after analysis.")
                 return
             on "/execute"
-                oSmartAgent.cExecutionMode = "execute"
-                oSmartAgent.bWaitingForApproval = false
+                oCoreAgent.oSmartAgent.cExecutionMode = "execute"
+                oCoreAgent.oSmartAgent.bWaitingForApproval = false
                 oUIManager.showSuccess("Mode changed to [ EXECUTION ]. Tools will run immediately.")
                 return
             on "/auto"
-                oSmartAgent.cExecutionMode = "auto"
-                oSmartAgent.bWaitingForApproval = false
+                oCoreAgent.oSmartAgent.cExecutionMode = "auto"
+                oCoreAgent.oSmartAgent.bWaitingForApproval = false
                 oUIManager.showSuccess("Mode changed to [ AUTO ]. Fully autonomous FSM active.")
                 return
         off
@@ -596,8 +616,8 @@ class oApp
             return
         ok
 
-        if left(cLowerCmd, 7) = "/debug "
-            cVal = trim(substr(cCommand, 8))
+        if left(cLowerCmd, 6) = "/debug "
+            cVal = trim(substr(cCommand, 7))
             if cVal = "on" or cVal = "true"
                 oCoreAgent.setDebugMode(true)
                 oUIManager.showSuccess("Debug mode enabled")
@@ -687,8 +707,12 @@ class oApp
             
             # Show token usage
             if oResponse[:total_tokens] != null and oResponse[:total_tokens] > 0
+                setColor(YELLOW)
+                see "    [ tokens: " 
+                setColor(BLUE)
+                see oResponse[:total_tokens]
                 setColor(DARKGREY)
-                ? "  [tokens: " + oResponse[:total_tokens] + "]"
+                see " ]"
                 resetColor()
             ok
         else
@@ -963,7 +987,7 @@ class oApp
         
         switch cKey
             on "agent"
-                oSmartAgent.cAgentName = cVal
+                oCoreAgent.oSmartAgent.cAgentName = cVal
                 oUIManager.showSuccess("Agent name set to: " + cVal)
             on "provider"
                 if oCoreAgent.setProvider(lower(cVal))
@@ -993,7 +1017,7 @@ class oApp
                     oUIManager.showSuccess("Debug mode disabled")
                 ok
             on "session_id"
-                oSmartAgent.cSessionId = cVal
+                oCoreAgent.oSmartAgent.cSessionId = cVal
                 oUIManager.cSessionId = cVal
                 oUIManager.showSuccess("Session ID set to: " + cVal)
             on "working_dir"

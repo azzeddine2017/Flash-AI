@@ -36,7 +36,8 @@ class UIManager
     cSessionId       = ""
     nTokensUsed      = 0
     cCurrentDir      = ""
-
+    cLastMode        = ""
+    
     func init {
         nConsoleWidth = tCols()
         cCurrentDir   = CurrentDir()
@@ -84,7 +85,7 @@ class UIManager
 
         # Version right-aligned
         setColor(oTheme.getAccent())
-        cVer = "v2.5"
+        cVer = "v3.0"
         nPad = nWidth - len(cVer) - 4
         if nPad < 0  nPad = 0  ok
         ? copy(" ", nPad) + cVer
@@ -133,31 +134,32 @@ class UIManager
     # ===================================================================
     # Display AI message (with basic Markdown handling)
     # ===================================================================
-    func displayAIMessage cResponse {
+     func displayAIMessage cResponse {
         ? ""
         aLines = str2list(cResponse)
         bInCodeBlock = false
         
         for cLine in aLines
+            # Handle Code Block Transitions
             if left(trim(cLine), 3) = "```"
                 bInCodeBlock = not bInCodeBlock
-                setColor(oTheme.getBorder())
-                see "  │ "
                 setColor(oTheme.getSec())
-                ? cLine
+                ? "  " + char(27)+"[90m" + "├" + copy("─", 4) + " [ CODE ] " + copy("─", 40)
                 loop
             ok
             
-            setColor(oTheme.getBorder())
-            see "  │ "
+            # Draw Sidebar
             if bInCodeBlock
+                setColor(char(27)+"[90m") # Dark Sidebar for code
+                see "  │ "
                 printCodeLine(cLine, oTheme)
             else
+                setColor(oTheme.getPrimary()) # Blue/Primary sidebar for text
+                see "  │ "
                 setColor(oTheme.getText())
                 printMarkdownLine(cLine, oTheme)
             ok
         next
-        ? ""
         resetColor()
     }
 
@@ -254,19 +256,22 @@ class UIManager
     # Tool Action display
     # ===================================================================
     func displayToolAction cToolName, cDetails {
-        cToolName = "" + cToolName
-        cDetails = "" + cDetails
-        
-        setColor(oTheme.getSec())
+        setColor(DARKGREY)
         see "  │ "
-        setColor(oTheme.getWarn())
-        see "◆ " + upper(cToolName) + " "
-        setColor(oTheme.getSec())
-        see "→ "
-        setColor(oTheme.getPrimary())
+        
+        # Using ANSI Color codes for inline badges
+        see getANSIBgColor(DARKGREY) + getANSIColor(YELLOW) + " ◆ " + upper(cToolName) + " " + getANSIColor(WHITE)
+        resetColor()
+        
+        setColor(DARKGREY)
+        see " → "
+        
+        setColor(CYAN)
+        if len(cDetails) > 50 cDetails = left(cDetails, 47) + "..." ok
         ? cDetails
         resetColor()
     }
+
 
     # ===================================================================
     # Line changes visualization
@@ -299,12 +304,17 @@ class UIManager
         see " ]" + nl
         resetColor()
     }
-
+     
     func showThinking {
-        # Prints thinking text, but main.ring will handle the animated spinner
         setColor(oTheme.getSec())
-        see nl + "  " + oLoc.getString("thinking") + "... "
+        see nl + "  " + oLoc.getString("thinking")
+        # Pulse animation (simulated dots)
+        for i = 1 to 3
+            see "."
+            sleep(0.2)
+        next
         resetColor()
+        ? ""
     }
 
     # ===================================================================
@@ -360,23 +370,57 @@ class UIManager
     # ===================================================================
     # Status bar
     # ===================================================================
-    func showStatusBar cMode, cTokenInfo {
-        nWidth = tCols()
-        if nWidth < 40  nWidth = 40  ok
-        setColor(BLUE)
-        see "  "
-        setColor(WHITE)
-        see cMode
-        setColor(oTheme.getSec())
-        cRight = cTokenInfo + " | " + cCurrentDir
-        nSpace = nWidth - len(cMode) - len(cRight) - 5
-        if nSpace > 0
-            see copy(" ", nSpace)
-        ok
-        setColor(oTheme.getPrimary())
-        ? cRight
+    func showStatusBar cMode, nTotalTokens {
+        self.nTokensUsed = nTotalTokens
+        self.cLastMode = upper(cMode)
+        
+        nWidth = tcols()
+        if nWidth < 60 nWidth = 60 ok
+
+        cModeBadge  = " [ MODE: " + self.cLastMode + " ] "
+        cTokenBadge = " [ TOKENS: " + nTotalTokens + " ] "
+        cPathBadge  = " [ DIR: " + self.cCurrentDir + " ] "
+
+        ? ""
+        # 1. Draw leading separator
+        setColor(DARKGREY)
+        see copy("─", 2)
+        
+        # 2. Draw Mode Badge with dynamic Background
+        switch self.cLastMode
+            on "AUTO"    
+                setBackgroundColor(GREEN)
+                setColor(BLACK)
+            on "PLAN"    
+                setBackgroundColor(LIGHTBLUE)
+                setColor(BLACK)
+            on "EXECUTE" 
+                setBackgroundColor(RED)
+                setColor(WHITE)
+            other        
+                setBackgroundColor(MAGENTA)
+                setColor(WHITE)
+        off
+        see cModeBadge
         resetColor()
+
+        # 3. Draw Token Badge
+        setBackgroundColor(BLACK)
+        setColor(YELLOW)
+        see cTokenBadge
+        resetColor()
+
+        # 4. Draw Path info (Right Aligned)
+        nRemaining = nWidth - len(cModeBadge) - len(cTokenBadge) - len(cPathBadge) - 5
+        setColor(DARKGREY)
+        if nRemaining > 0 see copy("─", nRemaining) ok
+        
+        setColor(GREY)
+        see cPathBadge
+        resetColor()
+        ? ""
     }
+
 
     # ===================================================================
     # Session separator
@@ -620,4 +664,12 @@ class UIManager
             setColor(WHITE)
         ok
         see cWord
+    }
+
+    # ===================================================================
+    # Simplified Helper for UI Reset
+    # ===================================================================
+    func resetUI {
+        resetColor()
+        see char(27) + "[0m"
     }

@@ -34,3 +34,4 @@ load "tools/project_tools.ring"
 load "tools/system_tools.ring"
 
 load "agent_tools.ring"
+load "tool_selector.ring"
