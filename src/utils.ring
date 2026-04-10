@@ -434,10 +434,10 @@ func estimateTokens(cText)
     # For English/Code, one token is approximately 4 characters
     # For Arabic, one token may be only 2 characters due to Unicode
     if isfunction("hasArabicText") and hasArabicText(cText)
-        return ceil(nLen / 2.5)
+        return (nLen / 2.5) + 1
     ok
     
-    return ceil(nLen / 4.0)
+    return (nLen / 4.0) + 1
 
 # ===================================================================
 # Exponential Backoff for Rate Limit Retries

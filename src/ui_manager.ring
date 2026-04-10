@@ -150,7 +150,7 @@ class UIManager
             
             # Draw Sidebar
             if bInCodeBlock
-                setColor(char(27)+"[90m") # Dark Sidebar for code
+                setColor(oTheme.getSec()) # Dark Sidebar for code
                 see "  │ "
                 printCodeLine(cLine, oTheme)
             else

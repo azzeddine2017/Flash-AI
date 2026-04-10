@@ -17,7 +17,8 @@ class SmartAgent
     oAgentTools = null
     oUIManager = null
     oLogger = null
-    otasktracker
+    otasktracker = null
+    oSelector = null
 
     # Advanced subsystems (Phase 1 & Phase 3 integration)
     oSecurityLayer = null
@@ -71,6 +72,7 @@ class SmartAgent
         oReflectionEngine = new ReflectionEngine()
         oStateMachine = new AgentStateMachine()
         oTaskTracker = new TaskTracker
+        oSelector = new AdaptiveToolSelector
 
         # Ensure required directories exist
         ensureDirectoryExists(APP_PATH("chats"))
@@ -79,13 +81,15 @@ class SmartAgent
         # Initialize session ID using shared utility
         cSessionId = generateUniqueId()
 
+        loadProjectGoal()
+
         oLogger.info("SmartAgent initialized - " + cAgentName + " v" + cAgentVersion)
     
     # ===================================================================
     # Process User Request
     # ===================================================================
     func processRequest(cUserMessage, cCurrentCode)
-        try
+        //try
             # Validate input
             if cUserMessage = "" or cUserMessage = null
                 return createErrorResponse("Empty message")
@@ -93,6 +97,11 @@ class SmartAgent
 
             # Add user message to context
             self.oContextEngine.addToHistory("user", cUserMessage, "chat")
+
+            # Learn from dialogue
+            if oLongTermMemory != null
+                oLongTermMemory.learnFromDialogue("user", cUserMessage)
+            ok
 
             # Determine request type
             cRequestType = analyzeRequestType(cUserMessage)
@@ -120,9 +129,9 @@ class SmartAgent
                 return sendToAI(cUserMessage, cRequestType, cCurrentCode)
             ok
 
-        catch
+        /*catch
             return createErrorResponse("Request processing failed: " + cCatchError)
-        done
+        done*/
 
     # ===================================================================
     # Advanced Request Type Analyzer (Context-Aware Intent Detection)
@@ -234,10 +243,10 @@ class SmartAgent
         done
 
     # ===================================================================
-    # Send to AI — Refactored with Formal State Machine (Phase 4)
+    # Send to AI — Refactored with Formal State Machine
     # ===================================================================
     func sendToAI(cMessage, cRequestType, cCurrentCode)
-        try
+        //try
             oContextMap = prepareContextMap(cMessage, cRequestType, cCurrentCode)
             aConversation = buildInitialConversation(oContextMap)
             
@@ -279,6 +288,10 @@ class SmartAgent
                 nRequestTokens = updateCurrentTokenCount(oAIResponse, nRequestTokens)
                 displayAgentThoughtAndMessage(oAIResponse)
                 
+                # [ CRITICAL FIX ] Immediate Goal & Roadmap Detection 
+                # We do this inside the loop so we don't lose the goal if the agent gets stuck in tool calls
+                detectAndRecordIntent(oAIResponse, nIteration)
+
                 cResponseType = getValueFromList(oAIResponse, "type", "text")
                 
                 # Logic for /plan mode: Allow READ-ONLY tools, but Pause on WRITE tools
@@ -338,10 +351,10 @@ class SmartAgent
             ok
             return oFinal
 
-        catch
+        /*catch
             if oStateMachine != null oStateMachine.transition(AGENT_ERROR) ok
             return createErrorResponse("AI request execution error: " + cCatchError)
-        done
+        done*/
 
     # ===================================================================
     # Phase 4 Decomposed Helpers for sendToAI
@@ -369,6 +382,11 @@ class SmartAgent
 
         cSystemPrompt = cModeInstruction + self.oContextEngine.getSystemPrompt(cRequestType)
 
+        # Persistence: Injection of current goal into system prompt
+        if self.cActiveGoal != ""
+            cSystemPrompt = "🎯 [ PRIMARY OBJECTIVE: " + self.cActiveGoal + " ] " + nl + cSystemPrompt
+        ok
+
         if cCurrentCode != "" and cCurrentCode != null
             self.oContextEngine.addCodeContext(self.cCurrentFile, cCurrentCode, "ring")
         ok
@@ -386,14 +404,14 @@ class SmartAgent
         nLoopStartClock = 0
         if oTelemetry != null nLoopStartClock = oTelemetry.startAPITimer() ok
 
-        cGoalInjection = ""
+       /* cGoalInjection = ""
         if self.cActiveGoal != ""
             cGoalInjection = " [ CURRENT TASK: " + self.cActiveGoal + " ] " + nl
         ok
         
         # Target injection in the System Prompt
         cSystemPrompt = cGoalInjection + self.oContextEngine.getSystemPrompt(cRequestType)
-
+        */
         cActiveTask = self.oTaskTracker.getNextTask()
         cRoadmapNote = ""
         
@@ -539,12 +557,10 @@ class SmartAgent
     # Dispatch to Provider
     # ===================================================================
     func dispatchToProvider(oContextMap, aConversation, cMessage)
-        # 1. Instantiate the Selector (can be moved to init for performance)
-        oSelector = new AdaptiveToolSelector
-        
-        # 2. Get relevant tools based on the current request type
+       
+        # Get relevant tools based on the current request type
         cType = oContextMap[:request_type] # Ensure this is passed in the map
-        aRelevant = oSelector.getRelevantTools(cType)
+        aRelevant = self.oSelector.getRelevantTools(cType)
         
         if self.oAIClient.cCurrentProvider = "openrouter"
             # Send only the relevant subset to OpenRouter
@@ -782,26 +798,39 @@ class SmartAgent
         ok
         return aConversation
 
+    func detectAndRecordIntent(oAIResponse, nIteration)
+        cFinalResponse = oAIResponse[:message]
+        
+        # 1. Goal Detection (Multi-language)
+        if nIteration = 1 or self.cActiveGoal = ""
+            aGoalPatterns = ["سأقوم بـ", "خطتي هي", "هدفنا هو", "I will", "My plan is", "The goal is", "Action Plan:"]
+            for cPattern in aGoalPatterns
+                if substr(cFinalResponse, cPattern)
+                    nPos = substr(cFinalResponse, cPattern)
+                    cRest = substr(cFinalResponse, nPos)
+                    aLines = split(cRest, nl)
+                    if len(aLines) > 0
+                        self.setActiveGoal(aLines[1])
+                        exit
+                    ok
+                ok
+            next
+        ok
+
+        # 2. Roadmap Detection (Sequential Indicators)
+        if (substr(cFinalResponse, "1.") and substr(cFinalResponse, "2.")) or
+           (substr(cFinalResponse, "خارطة الطريق") and substr(cFinalResponse, "1-"))
+            self.oTaskTracker.setRoadmap(cFinalResponse) 
+            if self.oLogger != NULL 
+                self.oLogger.info("  [SYSTEM] Roadmap captured and pinned to TaskTracker.") 
+            ok
+        ok
+
     func finalizeAgentResponse(oAIResponse, aToolsUsed, oContextMap, nIteration, nRequestTokens)
         cFinalResponse = oAIResponse[:message]
         cThoughtContent = oAIResponse[:thought]
         
-        #  [The added intelligence]: If the agent suggests a task, we automatically pin it as a goal
-        if nIteration = 1 # In the first thinking cycle
-            if substr(cFinalResponse, "سأقوم بـ") or substr(cFinalResponse, "I will") or substr(cFinalResponse, "خطتي هي")
-                # Extract the first line as a goal
-                aLines = split(cFinalResponse, nl)
-                if len(aLines) > 0
-                    self.setActiveGoal(aLines[1])
-                ok
-            ok
-        ok
-
-        #  If we detect that the agent has set an action plan, we store it in the tracker
-        if substr(cFinalResponse, "1.") and substr(cFinalResponse, "2.")
-            self.oTaskTracker.setRoadmap(cFinalResponse) 
-            see "  [SYSTEM] Roadmap captured and pinned to TaskTracker." + nl
-        ok
+        # Note: Goal/Roadmap now handled in real-time inside the loop via detectAndRecordIntent
 
         # Append tool usage note to the assistant response itself
         # (NOT as a separate "system" message — that breaks Gemini's turn alternation)
@@ -897,11 +926,20 @@ class SmartAgent
     func getValue(aList, cKey, cDefault)
         return getValueFromList(aList, cKey, cDefault)
 
-     # A function to update the target manually or automatically.
+    # A function to update the target manually or automatically.
     func setActiveGoal(cGoal)
         self.cActiveGoal = trim(cGoal)
         if self.oLogger != NULL 
             self.oLogger.info("🎯 Mission Goal Updated: " + self.cActiveGoal)
+        ok
+        saveProjectGoal()
+
+    func saveProjectGoal()
+        write(APP_PATH("logs/active_goal.txt"), self.cActiveGoal)
+
+    func loadProjectGoal()
+        if fexists(APP_PATH("logs/active_goal.txt"))
+            self.cActiveGoal = read(APP_PATH("logs/active_goal.txt"))
         ok
 
     
@@ -1121,7 +1159,7 @@ class SmartAgent
         cLanguagePreference = cLang
         bLanguageDetected = true
         if oUIManager != null oUIManager.setLanguage(cLang) ok
-        see "Agent language set to: " + cLang + nl
+        //see "Agent language set to: " + cLang + nl
 
     func getSavedSessions()
         aSessions = []
@@ -1182,22 +1220,70 @@ class TaskTracker
     nCurrentTask = 1
 
     func setRoadmap(cPlan)
-        # Convert text to task list
-        self.aTasks = split(cPlan, nl)
-        self.nCurrentTask = 1
-        saveTasks()
+        # Convert text to task list - Improved parsing
+        aLines = split(cPlan, nl)
+        aNewTasks = []
+        for cLine in aLines
+            cLine = trim(cLine)
+            # Match patterns like "1. Task", "- Task", "* Task"
+            if len(cLine) > 3
+                nAsc1 = ascii(cLine[1])
+                if (nAsc1 >= 48 and nAsc1 <= 57 and substr(cLine, ".")) or
+                   left(cLine, 2) = "- " or left(cLine, 2) = "* "
+                    
+                    # Clean the line
+                    if substr(cLine, ".")
+                        pos = substr(cLine, ".")
+                        cLine = trim(substr(cLine, pos + 1))
+                    else
+                        cLine = trim(substr(cLine, 3))
+                    ok
+                    
+                    if len(cLine) > 0
+                        aNewTasks + [["task", cLine], ["status", "pending"], ["verified", false]]
+                    ok
+                ok
+            ok
+        next
+
+        if len(aNewTasks) > 0
+            self.aTasks = aNewTasks
+            self.nCurrentTask = 1
+            saveTasks()
+        ok
 
     func getNextTask()
         if nCurrentTask <= len(aTasks)
-            return aTasks[nCurrentTask]
+            return aTasks[nCurrentTask][1][2] # Get Task name
         ok
         return ""
 
-    func markTaskDone()
-        self.nCurrentTask++
-        saveTasks()
+    func markTaskDone(cReason)
+        if nCurrentTask <= len(aTasks)
+            aTasks[nCurrentTask][2][2] = "done"
+            aTasks[nCurrentTask][3][2] = true
+            self.nCurrentTask++
+            saveTasks()
+            return true
+        ok
+        return false
 
     func saveTasks()
         # Save to file to ensure it remains even if the program crashes
-        write(APP_PATH("logs/current_roadmap.json"), jsonEncodeRecursive(self.aTasks))
+        # Use jsonEncodeRecursive from parent scope if available or shared utils
+        cJSON = jsonEncodeRecursive(self.aTasks)
+        write(APP_PATH("logs/current_roadmap.json"), cJSON)
         write(APP_PATH("logs/current_task_idx.txt"), "" + self.nCurrentTask)
+
+    func loadTasks()
+        if fexists(APP_PATH("logs/current_roadmap.json"))
+            try
+                cJSON = read(APP_PATH("logs/current_roadmap.json"))
+                aList = json2list(cJSON)
+                if type(aList) = "LIST" self.aTasks = aList ok
+                if fexists(APP_PATH("logs/current_task_idx.txt"))
+                    self.nCurrentTask = 0 + read(APP_PATH("logs/current_task_idx.txt"))
+                ok
+            catch
+            done
+        ok

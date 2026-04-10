@@ -81,8 +81,21 @@ class LongTermMemory
         if cQueryLower = "" return aResults ok
 
         # Split query into keywords (words > 2 chars)
+        # Handle punctuation to avoid "code," or "file."
         aQueryWords = []
-        aRaw = split(cQueryLower, " ")
+        cCleanQuery = ""
+        for i = 1 to len(cQueryLower)
+            cChar = cQueryLower[i]
+            nAsc = ascii(cChar)
+            # a-z (97-122), 0-9 (48-57), space (32)
+            if (nAsc >= 97 and nAsc <= 122) or (nAsc >= 48 and nAsc <= 57) or nAsc = 32
+                cCleanQuery += cChar
+            else
+                cCleanQuery += " "
+            ok
+        next
+
+        aRaw = split(cCleanQuery, " ")
         for cWord in aRaw
             cWord = trim(cWord)
             if len(cWord) > 2
@@ -98,7 +111,7 @@ class LongTermMemory
             oMem = aMemories[i]
             cFact = lower(getValueFromList(oMem, "fact", ""))
             cCat = lower(getValueFromList(oMem, "category", ""))
-            nImportance = getValueFromList(oMem, "importance", 5)
+            nImportance = 0 + getValueFromList(oMem, "importance", 5)
 
             nScore = 0
             for cWord in aQueryWords
@@ -212,6 +225,28 @@ class LongTermMemory
         # Learn from project analysis
         if cToolName = "analyze_project" and bSuccess
             remember("project_fact", left(cResultMsg, 250), 6)
+        ok
+
+    # ===================================================================
+    # Learn from User Dialogue
+    # ===================================================================
+    func learnFromDialogue cRole, cContent
+        if cRole != "user" return ok
+        cLower = lower(cContent)
+        
+        # User preferences / instructions
+        if substr(cLower, "i prefer") or substr(cLower, "use ") or substr(cLower, "always") or substr(cLower, "don't")
+            remember("user_preference", cContent, 6)
+        ok
+        
+        # Project facts
+        if substr(cLower, "project is") or substr(cLower, "this site") or substr(cLower, "the database")
+            remember("project_fact", cContent, 5)
+        ok
+        
+        # Secrets / Keys (Warning - don't store real keys, but store awareness)
+        if substr(cLower, "api_key") or substr(cLower, "password")
+            remember("security_note", "User mentioned sensitive credentials at " + date(), 8)
         ok
 
     # ===================================================================

@@ -20,7 +20,6 @@ load "smart_agent.ring"
 load "core_agent.ring"
 
 load "ai_client.ring"
-load "ai_assistant.ring"
 load "context_engine.ring"
 load "context_intelligence.ring"
 load "reflection_engine.ring"

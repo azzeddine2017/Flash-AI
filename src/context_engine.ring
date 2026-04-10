@@ -435,13 +435,21 @@ class ContextEngine
         return aContext
 
     # ===================================================================
-    # Smart Text Truncator (Head & Tail Preservation)
+    # Smart Text Truncator (Head & Tail Preservation / Semantic Summary)
     # ===================================================================
     func truncateLongText(cText, nMaxLength)
         if len(cText) <= nMaxLength
             return cText
         ok
-        
+
+        # Determine if it's a tool output (often contains structured data)
+        # If it looks like a directory listing or code, we can be more strategic
+        if substr(cText, "Directory:") or substr(cText, "Files in")
+            return "[DIRECTORY LISTING SUMMARIZED]: " + nl + 
+                   left(cText, 200) + nl + "... [ + " + (len(cText) - 300) + " chars ] ..." + nl + 
+                   right(cText, 100)
+        ok
+
         # The intelligence here: we keep 30% of the beginning of the text, and 70% of its end (because errors usually appear at the end)
         nHeadLimit = floor(nMaxLength * 0.3)
         nTailLimit = floor(nMaxLength * 0.7)
@@ -501,7 +509,10 @@ SECURITY PROTOCOL:
 - dependency_graph_generator: Visualizes relations between project files and modules.
 - automated_test_suite: Generates and runs unit tests for verified code reliability.
 - context_summarizer: Provides a high-level situational report of the current project state.
-10. ELEVATED PERMISSIONS: If you encounter a 'SECURITY ERROR' or 'Permission Denied' while modifying core files, ask the user to type '/authorize' in the terminal to grant you full administrative access to the codebase.`
+10. ELEVATED PERMISSIONS: If you encounter a 'SECURITY ERROR' or 'Permission Denied' while modifying core files, ask the user to type '/authorize' in the terminal to grant you full administrative access to the codebase.
+11. GOAL ADHERENCE: Always keep the 'PRIMARY OBJECTIVE' in mind. Every step you take must contribute directly to this goal. If you finish a goal, clearly state it and propose the next objective.
+12. ROADMAP MANAGEMENT: When you start a complex task, define a numbered roadmap (1. Task X, 2. Task Y). The system will automatically track these tasks. When a task is completed, explicitly mention it so the TaskTracker can bridge your progress.`
+    
     func getDefaultCodeAnalysisPrompt()
         return `You are a Senior Performance & Security Auditor.
         Your task is to perform a deep-dive analysis of the provided Ring source code.
