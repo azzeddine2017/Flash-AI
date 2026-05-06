@@ -25,6 +25,13 @@ class HTTPClient
         "Upgrade-Insecure-Requests: 1"
     ]
     
+    # Advanced Callbacks
+    cProgressCallback = ""
+    cWriteCallback    = ""
+    
+    # Stats from last request
+    aLastStats = []
+    
     /*
     Constructor
     */
@@ -123,6 +130,18 @@ class HTTPClient
             nValue = iif(bEnable, 1, 0)
             curl_easy_setopt(curl, CURLOPT_VERBOSE, nValue)
         ok
+
+    /*
+    Set Progress Callback function name
+    */
+    func setProgressCallback cFuncName
+        cProgressCallback = cFuncName
+
+    /*
+    Set Write Callback function name (for Streaming)
+    */
+    func setWriteCallback cFuncName
+        cWriteCallback = cFuncName
     
     /*
     Set custom headers
@@ -190,15 +209,44 @@ class HTTPClient
             setHeaders(aDefaultHeaders)
         ok
         
+        # Setup Global Context for Callbacks
+        $g_HTTPClient_Headers = []
+        $g_HTTPClient_Object  = self
+        
+        # Configure Headers Callback
+        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, :__HTTPClient_HeaderCallback)
+        
+        # Configure Progress Callback
+        if cProgressCallback != ""
+            curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0)
+            curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, :__HTTPClient_ProgressCallback)
+        else
+            curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1)
+        ok
+
+        # Configure Write Callback (Streaming)
+        if cWriteCallback != ""
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, :__HTTPClient_WriteCallback)
+        else
+            # Reset to default behavior (captured by perform_silent)
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, NULL)
+        ok
+
         # Send request and get response
         try
-            cResponse = curl_easy_perform_silent(curl)
+            if cWriteCallback != ""
+                curl_easy_perform(curl)
+                cResponse = ""
+            else
+                cResponse = curl_easy_perform_silent(curl)
+            ok
+            
             # Get response info
             nResponseCode = curl_getResponseCode(curl)
             nContentLength = curl_getContentLength(curl)
             
             # Create response object
-            return createResponse(nResponseCode, cResponse, nContentLength)
+            return createResponse(curl, nResponseCode, cResponse, nContentLength)
             
         catch
             return createErrorResponse("Request execution failed: " + cCatchError)
@@ -208,14 +256,19 @@ class HTTPClient
     /*
     Create a response object
     */
-    func createResponse nCode, cContent, nLength
-        return [
+    func createResponse curl, nCode, cContent, nLength
+        aLastStats = [
             :status_code = nCode,
             :content = cContent,
+            :content_type = curl_getContentType(curl),
             :content_length = nLength,
+            :url = curl_getEffectiveUrl(curl),
+            :total_time = curl_getTotalTime(curl),
+            :primary_ip = curl_getPrimaryIP(curl),
             :success = (nCode >= 200 and nCode < 300),
-            :headers = parseResponseHeaders(cContent)
+            :headers = $g_HTTPClient_Headers
         ]
+        return aLastStats
     
     /*
     Create an error response object
@@ -227,6 +280,8 @@ class HTTPClient
             :content_type = "",
             :content_length = 0,
             :url = "",
+            :total_time = 0,
+            :primary_ip = "",
             :success = false,
             :error = cError,
             :headers = []
@@ -302,6 +357,13 @@ class HTTPClient
                 return false
             ok
             
+            # Setup Progress Tracking if needed
+            $g_HTTPClient_Object = self
+            if cProgressCallback != ""
+                curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0)
+                curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, :__HTTPClient_ProgressCallback)
+            ok
+
             # Set download options
             curl_easy_setopt(curl, CURLOPT_URL, cURL)
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp)
@@ -315,7 +377,7 @@ class HTTPClient
             # Check download success
             nResponseCode = curl_getResponseCode(curl)
             if nResponseCode = 200
-                see "[ info ] File downloaded successfully" + nl
+                see "[ info ] File downloaded successfully (" + curl_getDownloadSize(curl) + " bytes)" + nl
                 return true
             else
                 see "[ error ] Download failed - Response code: " + nResponseCode + nl
@@ -333,3 +395,33 @@ class HTTPClient
         else
             return cFalse
         ok
+
+# ===================================================================
+# Internal Callbacks (Global Scope required by RingLibCurl)
+# ===================================================================
+
+$g_HTTPClient_Headers = []
+$g_HTTPClient_Object  = NULL
+
+func __HTTPClient_HeaderCallback
+    cData = curl_get_data()
+    cData = trim(cData)
+    if len(cData) > 0
+        add($g_HTTPClient_Headers, cData)
+    ok
+
+func __HTTPClient_ProgressCallback
+    if $g_HTTPClient_Object = NULL return ok
+    if $g_HTTPClient_Object.cProgressCallback = "" return ok
+    
+    aInfo = curl_get_progress_info()
+    # aInfo = [dltotal, dlnow, ultotal, ulnow]
+    call $g_HTTPClient_Object.cProgressCallback(aInfo[1], aInfo[2], aInfo[3], aInfo[4])
+    curl_set_progress_result(0)
+
+func __HTTPClient_WriteCallback
+    if $g_HTTPClient_Object = NULL return ok
+    if $g_HTTPClient_Object.cWriteCallback = "" return ok
+    
+    cData = curl_get_data()
+    call $g_HTTPClient_Object.cWriteCallback(cData)
