@@ -5,7 +5,6 @@
 
 load "stdlib.ring"
 load "jsonlib.ring"
-load "rogueutil.ring"
 load "libcurl.ring"
 
 load "logger.ring"

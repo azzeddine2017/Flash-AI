@@ -4,8 +4,8 @@
     Main Entry Point - v3.0
 ==============================================================================
 */
+load "rogueutil.ring"
 load "src/loadFiles.ring"
-
 
 func main {
     if len(sysargv) >= 3

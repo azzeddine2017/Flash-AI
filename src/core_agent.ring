@@ -14,7 +14,7 @@ class CoreAgent
     oLogger   
 
     # Configuration
-    cVersion       = "2.0"
+    cVersion       = "3.0"
     bAutoSave      = true
     nAutoSaveEvery = 5      # Auto-save every N messages
     nMessageCount  = 0

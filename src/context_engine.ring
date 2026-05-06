@@ -387,9 +387,9 @@ class ContextEngine
                 exit
             ok
         next
-        
+        nlenTempHistory = len(aTempHistory)
         # Restore chronological order
-        for i = len(aTempHistory) to 1 step -1
+        for i = nlenTempHistory to 1 step -1
             oItem = aTempHistory[i]
             cRole    = getValueFromList(oItem, "role", "user")
             cContent = getValueFromList(oItem, "content", "")
