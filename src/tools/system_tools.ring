@@ -60,10 +60,15 @@ func read_url cURL
         oClient = new HTTPClient()
         oRes = oClient.getrequest(cURL, [])
         oClient.cleanup()
-        if oRes != NULL and type(oRes) = "STRING"
-            return createSuccessResult("Content from " + cURL + ":" + nl + oRes)
+        
+        if oRes != NULL and oRes[:success]
+            cType = oRes[:content_type]
+            nSize = oRes[:content_length]
+            return createSuccessResult("Content from " + cURL + " (Type: " + cType + ", Size: " + nSize + " bytes):" + nl + oRes[:content])
         else
-            return createErrorResult("Failed to fetch URL or empty content")
+            cErr = "Failed to fetch URL"
+            if oRes != NULL and oRes[:error] != "" cErr += ": " + oRes[:error] ok
+            return createErrorResult(cErr)
         ok
     catch
         return createErrorResult("HTTP fetch error: " + cCatchError)

@@ -1,6 +1,38 @@
+
+# ===================================================================
+# Internal Callbacks (Global Scope required by RingLibCurl)
+# ===================================================================
+
+$g_HTTPClient_Headers = []
+$g_HTTPClient_Object  = NULL
+
+func __HTTPClient_HeaderCallback
+    cData = curl_get_data()
+    cData = trim(cData)
+    if len(cData) > 0
+        add($g_HTTPClient_Headers, cData)
+    ok
+
+func __HTTPClient_ProgressCallback
+    if $g_HTTPClient_Object = NULL return ok
+    if $g_HTTPClient_Object.cProgressCallback = "" return ok
+    
+    aInfo = curl_get_progress_info()
+    # aInfo = [dltotal, dlnow, ultotal, ulnow]
+    call $g_HTTPClient_Object.cProgressCallback(aInfo[1], aInfo[2], aInfo[3], aInfo[4])
+    curl_set_progress_result(0)
+
+func __HTTPClient_WriteCallback
+    if $g_HTTPClient_Object = NULL return ok
+    if $g_HTTPClient_Object.cWriteCallback = "" return ok
+    
+    cData = curl_get_data()
+    call $g_HTTPClient_Object.cWriteCallback(cData)
+
 # ===================================================================
 # HTTP Client Module
 # ===================================================================
+
 
 
 class HTTPClient
@@ -227,9 +259,6 @@ class HTTPClient
         # Configure Write Callback (Streaming)
         if cWriteCallback != ""
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, :__HTTPClient_WriteCallback)
-        else
-            # Reset to default behavior (captured by perform_silent)
-            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, NULL)
         ok
 
         # Send request and get response
@@ -396,32 +425,3 @@ class HTTPClient
             return cFalse
         ok
 
-# ===================================================================
-# Internal Callbacks (Global Scope required by RingLibCurl)
-# ===================================================================
-
-$g_HTTPClient_Headers = []
-$g_HTTPClient_Object  = NULL
-
-func __HTTPClient_HeaderCallback
-    cData = curl_get_data()
-    cData = trim(cData)
-    if len(cData) > 0
-        add($g_HTTPClient_Headers, cData)
-    ok
-
-func __HTTPClient_ProgressCallback
-    if $g_HTTPClient_Object = NULL return ok
-    if $g_HTTPClient_Object.cProgressCallback = "" return ok
-    
-    aInfo = curl_get_progress_info()
-    # aInfo = [dltotal, dlnow, ultotal, ulnow]
-    call $g_HTTPClient_Object.cProgressCallback(aInfo[1], aInfo[2], aInfo[3], aInfo[4])
-    curl_set_progress_result(0)
-
-func __HTTPClient_WriteCallback
-    if $g_HTTPClient_Object = NULL return ok
-    if $g_HTTPClient_Object.cWriteCallback = "" return ok
-    
-    cData = curl_get_data()
-    call $g_HTTPClient_Object.cWriteCallback(cData)

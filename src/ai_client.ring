@@ -14,7 +14,7 @@ class AIClient
     # AIClient initialized with provider: gemini
     cCurrentProvider = "gemini"  # Default provider
     
-    cGeminiModel = "gemini-3.1-flash-lite-preview" # "gemini-3-flash-preview"  "gemma-4-31b-it" 
+    cGeminiModel =  "gemma-4-31b-it" # "gemini-3.1-flash-lite-preview" # "gemini-3-flash-preview"  
     cOpenAIModel = "gpt-4.1"
     cClaudeModel = "claude-3.5-sonnet"
     cOpenRouterModel = "qwen/qwen3.6-plus:free"
@@ -791,25 +791,51 @@ class AIClient
             oClient.cleanup()
 
             # Check request success
-            if oResponse != NULL and oResponse[:success]
-                # see "HTTP request successful - Status: " + oResponse[:status_code] + nl
-                return oResponse[:content]
-            elseif oResponse != NULL and type(oResponse[:content]) = "STRING" and len(oResponse[:content]) > 0
-                # see "HTTP request returned status: " + oResponse[:status_code] + " content: " + oResponse[:content] + nl
-                return oResponse[:content]
-            elseif oResponse != NULL and oResponse[:error] != NULL and oResponse[:error] != ""
-                # see "HTTP request failed: " + oResponse[:error] + nl
-                return '{"error": "HTTP request failed: ' + oResponse[:error] + '"}'
-            else
-                # see "HTTP request failed with status: " + oResponse[:status_code] + nl
-                return '{"error": "HTTP request failed with status code: ' + oResponse[:status_code] + '"}'
+            if oResponse != NULL
+                # Performance Logging
+                # see "  [AI Performance] Time: " + oResponse[:total_time] + "s | Server: " + oResponse[:primary_ip] + nl
+                
+                # Check for rate limit info in headers
+                self.checkRateLimits(oResponse[:headers])
+                
+                if oResponse[:success]
+                    return oResponse[:content]
+                elseif type(oResponse[:content]) = "STRING" and len(oResponse[:content]) > 0
+                    return oResponse[:content]
+                elseif oResponse[:error] != ""
+                    return '{"error": "' + oResponse[:error] + '"}'
+                ok
             ok
-
+            
+            return ""
         catch
-            # see "HTTP request error: " + cCatchError + nl
-            return '{"error": "HTTP request failed: ' + cCatchError + '"}'
+            return ""
         done
 
+    # ===================================================================
+    # Dynamic Rate Limit Detection
+    # ===================================================================
+    func checkRateLimits(aHeaders)
+        for cHeader in aHeaders
+            cLower = lower(cHeader)
+            if substr(cLower, "x-ratelimit-remaining")
+                # Found rate limit info, we could adjust nRateLimitRPM here
+                # For now, just log if it's getting low
+                aParts = split(cHeader, ":")
+                if len(aParts) >= 2
+                    nRemaining = 0 + trim(aParts[2])
+                    if nRemaining < 5
+                        see "  [!] Warning: AI Rate limit low (" + nRemaining + " remaining)" + nl
+                    ok
+                ok
+            elseif substr(cLower, "retry-after")
+                # Server is telling us how long to wait
+                aParts = split(cHeader, ":")
+                if len(aParts) >= 2
+                    see "  [!] Server requested wait (Retry-After): " + aParts[2] + "s" + nl
+                ok
+            ok
+        next
 
 
     # ===================================================================
