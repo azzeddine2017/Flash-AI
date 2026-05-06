@@ -3,6 +3,14 @@
 # ===================================================================
 
 
+$g_AIClient_Object = NULL
+$g_AIClient_StreamBuffer = ""
+
+func __ai_client_stream_callback cData
+    if $g_AIClient_Object != NULL
+        $g_AIClient_Object.processStreamChunk(cData)
+    ok
+
 
 class AIClient
     
@@ -14,7 +22,7 @@ class AIClient
     # AIClient initialized with provider: gemini
     cCurrentProvider = "gemini"  # Default provider
     
-    cGeminiModel =  "gemma-4-31b-it" # "gemini-3.1-flash-lite-preview" # "gemini-3-flash-preview"  
+    cGeminiModel = "gemini-3.1-flash-lite-preview" # "gemini-3-flash-preview"   "gemma-4-31b-it" # 
     cOpenAIModel = "gpt-4.1"
     cClaudeModel = "claude-3.5-sonnet"
     cOpenRouterModel = "qwen/qwen3.6-plus:free"
@@ -30,6 +38,10 @@ class AIClient
     nMaxTokens = 4096
     nTemperature = 0.7
     
+    # Streaming
+    bStreamMode = false
+    cStreamBuffer = ""
+    
     # Stats
     nTotalTokens = 0
     
@@ -43,15 +55,40 @@ class AIClient
     # Constructor
     # ===================================================================
     func init()
+        $g_AIClient_Object = self
         loadAPIKeys()
         see "AIClient initialized with provider: " + cCurrentProvider + nl
-        
-        
-    func addTokens n
+
+    func addTokens(n)
         nTotalTokens += n
-    
-    func resetTokens
+
+    func resetTokens()
         nTotalTokens = 0
+
+    func setStreamMode(bEnable)
+        self.bStreamMode = bEnable
+
+    func processStreamChunk(cChunk)
+        # This is called by HTTPClient's WriteCallback
+        self.cStreamBuffer += cChunk
+        $g_AIClient_StreamBuffer += cChunk
+        
+        # Simple extraction for real-time feedback
+        nPos = substr(cChunk, '"text": "')
+        if nPos > 0
+            cRest = substr(cChunk, nPos + 9)
+            nEnd = substr(cRest, '"')
+            if nEnd > 0
+                cText = left(cRest, nEnd-1)
+                cText = substr(cText, "\n", nl)
+                cText = substr(cText, '\"', '"')
+                see cText
+                # Natural typing effect: Add a small delay
+                sleep(0.1)
+            ok
+        ok
+    
+    
     # ===================================================================
     # Load API Keys from Configuration
     # ===================================================================
@@ -153,7 +190,7 @@ class AIClient
             on "openrouter" cOpenRouterModel = cModel
         off
         see "AI Model set to: " + cModel + nl
-    ok
+    
     
     # ===================================================================
     # API Key Management
@@ -745,6 +782,105 @@ class AIClient
         ]
 
     # ===================================================================
+    # Send Gemini Streaming Request
+    # ===================================================================
+    func sendGeminiStreaming(cConversationJSON, cToolsJSON)
+        # Preserve original endpoint
+        cOrig = self.cGeminiEndpoint
+        # Switch to streaming endpoint
+        cStreamURL = substr(cOrig, "generateContent", "streamGenerateContent")
+        cURL = cStreamURL + "?key=" + self.cGeminiAPIKey
+        
+        cRequestJSON = '{"contents":' + cConversationJSON + ',' +
+                       '"generationConfig":{"temperature":' + self.nTemperature + ',"maxOutputTokens":' + self.nMaxTokens + '}'
+        
+        if cToolsJSON != "" and cToolsJSON != "[]"
+             cRequestJSON += ',"tools":[{"functionDeclarations":' + cToolsJSON + '}]'
+        ok
+        cRequestJSON += '}'
+        
+        self.setStreamMode(true)
+        cResponse = self.sendHTTPRequest(cURL, cRequestJSON, "POST", ["Content-Type: application/json"])
+        self.setStreamMode(false)
+        
+        # The result in cResponse is actually the whole stream
+        return self.parseGeminiStreamBuffer(self.cStreamBuffer)
+    
+
+    func parseGeminiStreamBuffer(cBuffer)
+        # Fallback to global buffer if local is empty (Scope protection)
+        if trim(cBuffer) = "" cBuffer = $g_AIClient_StreamBuffer ok
+        
+        if trim(cBuffer) = ""
+            return createErrorResponse("Empty response from Gemini API")
+        ok
+
+        try
+            aChunks = json2list(cBuffer)
+            if type(aChunks) != "LIST" return createErrorResponse("Failed to parse stream buffer") ok
+            
+            cFullText = ""
+            cFullThought = ""
+            nTotalT = 0
+            oFirstFuncCall = NULL
+            aAllParts = []
+            
+            for oChunk in aChunks
+                oUsage = getValue(oChunk, "usageMetadata", [])
+                nTotalT = getValue(oUsage, "totalTokenCount", nTotalT)
+                
+                aCandidates = getValue(oChunk, "candidates", [])
+                if len(aCandidates) > 0
+                    oCandidate = aCandidates[1]
+                    oContent = getValue(oCandidate, "content", [])
+                    aParts = getValue(oContent, "parts", [])
+                    for oPart in aParts
+                        Add(aAllParts, oPart)
+                        cFullText += getValue(oPart, "text", "")
+                        cFullThought += getValue(oPart, "thought", "")
+                        
+                        # Capture tool call if present
+                        oFunc = getValue(oPart, "functionCall", NULL)
+                        if oFunc != NULL and oFirstFuncCall = NULL
+                            oFirstFuncCall = oFunc
+                        ok
+                    next
+                ok
+            next
+
+            if nTotalT = 0
+                nTotalT = estimateTokens(cFullText) + estimateTokens(cFullThought) + 100
+            ok
+
+            if oFirstFuncCall != NULL
+                return [
+                    :success = true,
+                    :type = "function_call",
+                    :function_name = getValue(oFirstFuncCall, "name", ""),
+                    :function_args = getValue(oFirstFuncCall, "args", []),
+                    :all_parts = aAllParts,
+                    :message = trim(cFullText),
+                    :thought = trim(cFullThought),
+                    :total_tokens = nTotalT,
+                    :error = ""
+                ]
+            ok
+
+            return [
+                :success = true,
+                :type = "text",
+                :message = trim(cFullText),
+                :thought = trim(cFullThought),
+                :total_tokens = nTotalT,
+                :all_parts = aAllParts,
+                :error = ""
+            ]
+        catch
+            return createErrorResponse("Stream parse error: " + cCatchError)
+        done
+    
+
+    # ===================================================================
     # HTTP Request Function - Using SimpleHTTPClient
     # ===================================================================
     func sendHTTPRequest(cURL, cData, cMethod, aHeaders)
@@ -775,6 +911,14 @@ class AIClient
             oClient = new HTTPClient()
             oClient.setTimeout(nTimeout)
             oClient.setVerifySSL(false)
+
+            # --- Configure Streaming ---
+            if self.bStreamMode
+                $g_AIClient_Object = self   # Crucial: Link current instance to global callback
+                self.cStreamBuffer = ""
+                $g_AIClient_StreamBuffer = "" # Reset global backup
+                oClient.setWriteCallback("__ai_client_stream_callback")
+            ok
 
             # Send request by type
             oResponse = NULL

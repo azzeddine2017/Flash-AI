@@ -379,6 +379,13 @@ class UIManager
 
         cModeBadge  = " [ MODE: " + self.cLastMode + " ] "
         cTokenBadge = " [ TOKENS: " + nTotalTokens + " ] "
+        
+        # Calculate Quota (assuming 1M token limit for Flash Free Tier)
+        nLimit = 1000000
+        nPercent = 100.0 - ((nTotalTokens / nLimit) * 100.0)
+        if nPercent < 0 nPercent = 0 ok
+        cQuotaBadge = " [ QUOTA: " + nPercent + "% ] "
+        
         cPathBadge  = " [ DIR: " + self.cCurrentDir + " ] "
 
         ? ""
@@ -410,8 +417,19 @@ class UIManager
         see cTokenBadge
         resetColor()
 
-        # 4. Draw Path info (Right Aligned)
-        nRemaining = nWidth - len(cModeBadge) - len(cTokenBadge) - len(cPathBadge) - 5
+        # 4. Draw Quota Badge (Visual Indicator)
+        if nPercent > 50
+            setColor(GREEN)
+        elseif nPercent > 20
+            setColor(YELLOW)
+        else
+            setColor(RED)
+        ok
+        see cQuotaBadge
+        resetColor()
+
+        # 5. Draw Path info (Right Aligned)
+        nRemaining = nWidth - len(cModeBadge) - len(cTokenBadge) - len(cQuotaBadge) - len(cPathBadge) - 5
         setColor(DARKGREY)
         if nRemaining > 0 see copy("─", nRemaining) ok
         

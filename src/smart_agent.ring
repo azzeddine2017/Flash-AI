@@ -61,6 +61,7 @@ class SmartAgent
         oAgentTools = new AgentTools()
         oLogger = new Logger()
         nTotalTokens = 0
+        oAIClient.setStreamMode(true)
         
         # Initialize advanced subsystems
         oSecurityLayer = new SecurityLayer()
@@ -379,8 +380,15 @@ class SmartAgent
             on "auto"
                 cModeInstruction = " [ STATUS: AUTONOMOUS MODE ] You are free to plan and execute tools iteratively as needed." + nl
         off
+        
+        # Resource Awareness Injection (Token Quota)
+        nLimit = 1000000
+        nPercent = 100.0 - ((self.nTotalTokens / nLimit) * 100.0)
+        if nPercent < 0 nPercent = 0 ok
+        cQuotaInfo = " [ RESOURCE STATUS: " + nPercent + "% Quota Remaining ] " + nl +
+                     "🚨 ADVICE: You are using a free tier API. Manage your tool calls and context length wisely to avoid being throttled or blocked." + nl
 
-        cSystemPrompt = cModeInstruction + self.oContextEngine.getSystemPrompt(cRequestType)
+        cSystemPrompt = cQuotaInfo + cModeInstruction + self.oContextEngine.getSystemPrompt(cRequestType)
 
         # Persistence: Injection of current goal into system prompt
         if self.cActiveGoal != ""
@@ -571,7 +579,12 @@ class SmartAgent
             # Send only the relevant subset to Gemini
             cToolsJSON = self.oAgentTools.getFilteredGeminiJSON(aRelevant)
             cConvertJSON = jsonEncode(aConversation)
-            return self.oAIClient.sendGeminiConversation(cConvertJSON, cToolsJSON)
+            
+            if self.oAIClient.bStreamMode
+                return self.oAIClient.sendGeminiStreaming(cConvertJSON, cToolsJSON)
+            else
+                return self.oAIClient.sendGeminiConversation(cConvertJSON, cToolsJSON)
+            ok
         else
             return self.oAIClient.sendChatRequest(cMessage, oContextMap[:system_prompt], oContextMap[:context_array])
         ok
@@ -598,6 +611,12 @@ class SmartAgent
 
         cMsgContent = oAIResponse[:message]
         if cMsgContent != "" and cMsgContent != null
+            # If streaming was active, the message has already been printed chunk by chunk
+            if self.oAIClient.bStreamMode
+                ? "" # Final new line
+                return
+            ok
+            
             if oUIManager != null 
                 oUIManager.displayAIMessage(cMsgContent)
             else
