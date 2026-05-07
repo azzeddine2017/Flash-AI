@@ -22,10 +22,10 @@ class AIClient
     # AIClient initialized with provider: gemini
     cCurrentProvider = "gemini"  # Default provider
     
-    cGeminiModel = "gemini-3.1-flash-lite-preview" # "gemini-3-flash-preview"   "gemma-4-31b-it" # 
+    cGeminiModel = "gemini-3-flash-preview" # 
     cOpenAIModel = "gpt-4.1"
     cClaudeModel = "claude-3.5-sonnet"
-    cOpenRouterModel = "qwen/qwen3.6-plus:free"
+    cOpenRouterModel = "x-ai/grok-4.1-fast:free"
 
     # API Endpoints
     cGeminiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/"+cGeminiModel+":generateContent"
@@ -127,7 +127,7 @@ class AIClient
                         self.nTemperature     = getValue(oKeys, "temperature", 0.7)
                         self.nTimeout         = getValue(oKeys, "timeout", 30)
                         self.nRateLimitRPM    = getValue(oKeys, "rate_limit_rpm", 15)
-                        self.nMaxRetries      = getValue(oKeys, "max_retries", 1)
+                        self.nMaxRetries      = getValue(oKeys, "max_retries", 3)
                     else
                         see "Error: Invalid configuration format in config/api_keys.json" + nl
                     ok
@@ -803,7 +803,15 @@ class AIClient
         cResponse = self.sendHTTPRequest(cURL, cRequestJSON, "POST", ["Content-Type: application/json"])
         self.setStreamMode(false)
         
-        # The result in cResponse is actually the whole stream
+        # Check if the HTTP request itself returned an error (like 429, 503, etc.)
+        if type(cResponse) = "STRING" and len(cResponse) > 0
+            if substr(cResponse, '"error"')
+                # If we have an error JSON in the response, parse it normally
+                return self.parseGeminiResponseFull(cResponse)
+            ok
+        ok
+
+        # Otherwise, process the accumulated stream buffer
         return self.parseGeminiStreamBuffer(self.cStreamBuffer)
     
 
@@ -892,69 +900,65 @@ class AIClient
                 nMinGap = 60.0 / nRateLimitRPM
                 if nElapsed < nMinGap
                     nWait = nMinGap - nElapsed
-                    # Only sleep if substantial
-                    if nWait > 0.1
-                        # see "  [!] Rate limit protection: waiting " + nWait + "s..." + nl
-                        sleep(nWait)
-                    ok
+                    if nWait > 0.1 sleep(nWait) ok
                 ok
             ok
             nLastRequestTime = clock()
         ok
 
-        try
-            # see "Sending HTTP request to: " + cURL + nl
-            # see "Method: " + cMethod + nl
-            # see "Data length: " + len(cData) + " characters" + nl
+        nRetry = 0
+        while nRetry <= self.nMaxRetries
+            nRetry++
+            try
+                # Create HTTP client
+                oClient = new HTTPClient()
+                oClient.setTimeout(nTimeout)
+                oClient.setVerifySSL(false)
 
-            # Create HTTP client
-            oClient = new HTTPClient()
-            oClient.setTimeout(nTimeout)
-            oClient.setVerifySSL(false)
-
-            # --- Configure Streaming ---
-            if self.bStreamMode
-                $g_AIClient_Object = self   # Crucial: Link current instance to global callback
-                self.cStreamBuffer = ""
-                $g_AIClient_StreamBuffer = "" # Reset global backup
-                oClient.setWriteCallback("__ai_client_stream_callback")
-            ok
-
-            # Send request by type
-            oResponse = NULL
-            switch upper(cMethod)
-                on "GET"
-                    oResponse = oClient.getrequest(cURL, aHeaders)
-                on "POST"
-                    oResponse = oClient.post(cURL, cData, aHeaders)
-                other
-                    oResponse = oClient.request(cMethod, cURL, aHeaders, cData)
-            off
-
-            # Cleanup resources
-            oClient.cleanup()
-
-            # Check request success
-            if oResponse != NULL
-                # Performance Logging
-                # see "  [AI Performance] Time: " + oResponse[:total_time] + "s | Server: " + oResponse[:primary_ip] + nl
-                
-                # Check for rate limit info in headers
-                self.checkRateLimits(oResponse[:headers])
-                
-                if oResponse[:success]
-                    return oResponse[:content]
-                elseif type(oResponse[:content]) = "STRING" and len(oResponse[:content]) > 0
-                    return oResponse[:content]
-                elseif oResponse[:error] != ""
-                    return '{"error": "' + oResponse[:error] + '"}'
+                # --- Configure Streaming ---
+                if self.bStreamMode
+                    $g_AIClient_Object = self
+                    self.cStreamBuffer = ""
+                    $g_AIClient_StreamBuffer = ""
+                    oClient.setWriteCallback("__ai_client_stream_callback")
                 ok
-            ok
-            
-            return ""
-        catch
-            return ""
-        done
+
+                # Send request
+                oResponse = NULL
+                switch upper(cMethod)
+                    on "GET"  oResponse = oClient.getrequest(cURL, aHeaders)
+                    on "POST" oResponse = oClient.post(cURL, cData, aHeaders)
+                    other     oResponse = oClient.request(cMethod, cURL, aHeaders, cData)
+                off
+
+                oClient.cleanup()
+
+                if oResponse != NULL
+                    self.checkRateLimits(oResponse[:headers])
+                    
+                    cContent = "" + oResponse[:content]
+                    if oResponse[:success] and trim(cContent) != ""
+                        return oResponse[:content]
+                    ok
+                    
+                    # Error handling with retry logic for Gemini INTERNAL or Empty response
+                    if substr(cContent, '"INTERNAL"') or substr(cContent, '"503"') or substr(cContent, '"RESOURCE_EXHAUSTED"') or oResponse[:error] != "" or trim(cContent) = ""
+                        if nRetry <= self.nMaxRetries
+                            # Increase wait time for quota issues
+                            nWaitTime = 2 * nRetry
+                            if substr(cContent, '"RESOURCE_EXHAUSTED"') nWaitTime = 10 ok
+                            sleep(nWaitTime)
+                            loop
+                        ok
+                    ok
+
+                    if trim(cContent) != "" return cContent ok
+                ok
+            catch
+                if nRetry > self.nMaxRetries return "" ok
+            done
+        end
+        return ""
 
     # ===================================================================
     # Dynamic Rate Limit Detection
