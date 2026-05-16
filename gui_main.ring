@@ -10,6 +10,11 @@ load "src/loadFiles.ring"
 
 # Global handle for callbacks
 oFlashGUI = null
+oMCPWin = null
+oMCPList = null
+oMCPNameInput = null
+oMCPCmdInput = null
+oMCPTransportCmb = null
 
 func main
     oFlashGUI = new FlashGUI
@@ -32,6 +37,7 @@ class FlashGUI
     oBtnClear = null
     oBtnDelete = null
     oBtnLang = null
+    oBtnMCP = null
     oStatusIndicator = null
     oSend = null
     oBtnSaveJSON = null
@@ -68,6 +74,7 @@ class FlashGUI
     T_YOU      = "You"
     T_AGENT    = "FLASH AI"
     T_TOKENS   = "Tokens: "
+    T_MCP      = "🔌 MCP Servers"
     T_SEC_TITLE = "Security Alert"
     T_SEC_MSG   = "The AI is requesting to perform a sensitive action. Do you authorize this?"
 
@@ -182,6 +189,12 @@ class FlashGUI
         oAuthCheck.setstatechangedEvent("oFlashGUI.toggleAuth()")
         oSideLayout.addWidget(oAuthCheck)
 
+        oBtnMCP = new qPushButton(oSidebar)
+        oBtnMCP.setObjectName("SideBtn")
+        oBtnMCP.setText(T_MCP)
+        oBtnMCP.setClickEvent("oFlashGUI.manageMCPServers()")
+        oSideLayout.addWidget(oBtnMCP)
+
         oBtnLang = new qPushButton(oSidebar)
         oBtnLang.setText("العربية")
         oBtnLang.setClickEvent("oFlashGUI.toggleLanguage()")
@@ -287,7 +300,22 @@ class FlashGUI
         oWin.show()
         
         refreshSessionsList()
+        
+        # Defer MCP auto-connect until AFTER Qt event loop has started
+        # Ring's Process class requires an active Qt event loop to read stdout
+        oStartupTimer = new qTimer(oWin) {
+            setinterval(500)
+            settimeoutEvent("oFlashGUI.delayedStartup()")
+            setSingleshot(true)
+            start()
+        }
+        
         oApp.exec()
+
+    func delayedStartup
+        oCoreAgent.oSmartAgent.oAgentTools.autoConnectMCPServers()
+        # You could also append a status message to the UI if needed
+        # oHistory.append("<div style='color:#8b949e; font-size:10pt; text-align:center;'>MCP Auto-connect complete.</div>")
 
     func displayToolActionInternal cToolName, cDetails
         cHtml = "<div style='background-color:#161b22; border: 1px solid #30363d; border-radius:8px; padding:10px; margin:5px 20px; border-left: 4px solid #d19a66;'>" + 
@@ -342,7 +370,42 @@ class FlashGUI
         oStatusIndicator.setStyleSheet("color: orange; font-weight: bold;")
         oApp.processEvents()
         
-        oRes = oCoreAgent.processMessage(cCmd, "")
+        cLowerCmd = lower(trim(cCmd))
+        if left(cLowerCmd, 5) = "/mcp "
+            aParts = split(cCmd, " ")
+            if len(aParts) >= 3 and lower(trim(aParts[2])) = "connect"
+                cTransport = trim(aParts[3])
+                if lower(cTransport) = "stdio" and len(aParts) >= 4
+                    cExecCmd = trim(aParts[4])
+                    aArgs = []
+                    for i = 5 to len(aParts) aArgs + trim(aParts[i]) next
+                    oHistory.append("<div style='color:#3fb950;'>Connecting to MCP via STDIO...</div>")
+                    oApp.processEvents()
+                    bRes = oCoreAgent.oSmartAgent.oAgentTools.connectMCPServer("stdio", cExecCmd, aArgs)
+                    if bRes
+                        oHistory.append("<div style='color:#3fb950; text-align:center;'>MCP Server connected and tools registered.</div>")
+                    else
+                        oHistory.append("<div style='color:#f85149; text-align:center;'>Failed to connect to MCP Server.</div>")
+                    ok
+                elseif lower(cTransport) = "http" and len(aParts) >= 4
+                    cUrl = trim(aParts[4])
+                    oHistory.append("<div style='color:#3fb950;'>Connecting to MCP via HTTP...</div>")
+                    oApp.processEvents()
+                    bRes = oCoreAgent.oSmartAgent.oAgentTools.connectMCPServer("http", cUrl, [])
+                    if bRes
+                        oHistory.append("<div style='color:#3fb950; text-align:center;'>MCP Server connected and tools registered.</div>")
+                    else
+                        oHistory.append("<div style='color:#f85149; text-align:center;'>Failed to connect to MCP Server.</div>")
+                    ok
+                else
+                    oHistory.append("<div style='color:#f85149; text-align:center;'>Usage: /mcp connect <stdio/http> <cmd/url> [args...]</div>")
+                ok
+            else
+                oHistory.append("<div style='color:#f85149; text-align:center;'>Usage: /mcp connect <stdio/http> <cmd/url> [args...]</div>")
+            ok
+        else
+            oRes = oCoreAgent.processMessage(cCmd, "")
+        ok
         
         oStatusIndicator.setText(T_ONLINE)
         oStatusIndicator.setStyleSheet("color: #3fb950; font-weight: bold;")
@@ -469,6 +532,7 @@ class FlashGUI
             T_YOU      = "أنت"
             T_AGENT    = "ذكاء فلاش"
             T_TOKENS   = "الكلمات: "
+            T_MCP      = "🔌 خوادم MCP"
             oWin.setLayoutDirection(Qt_RightToLeft)
             oBtnLang.setText("إنجليزي")
             oCoreAgent.setLanguage("AR")
@@ -491,6 +555,7 @@ class FlashGUI
             T_YOU      = "You"
             T_AGENT    = "FLASH AI"
             T_TOKENS   = "Tokens: "
+            T_MCP      = "🔌 MCP Servers"
             oWin.setLayoutDirection(Qt_LeftToRight)
             oBtnLang.setText("العربية")
             oCoreAgent.setLanguage("EN")
@@ -507,10 +572,114 @@ class FlashGUI
         oBtnSaveText.setText(T_SAVE_TEXT)
         oBtnSaveMD.setText(T_SAVE_MD)
         oTitleLabel.setText(T_TITLE)
+        oBtnMCP.setText(T_MCP)
         oStatusIndicator.setText(T_ONLINE)
         oTokenLabel.setText(T_TOKENS + oCoreAgent.getTotalTokens())
         oInput.setPlaceholderText(T_PLACE)
         oSend.setText(T_EXEC)
+
+    
+
+    func manageMCPServers
+        if not isNULL(oMCPWin) 
+            oMCPWin.show()
+            refreshMCPList()
+            return 
+        ok
+        
+        oMCPWin = new qWidget()
+        oMCPWin.setwindowtitle(T_MCP)
+        oMCPWin.resize(600, 500)
+        oMCPWin.setStyleSheet(oWin.styleSheet())
+        
+        oVLayout = new qVBoxLayout()
+        oMCPWin.setLayout(oVLayout)
+        
+        oHeader = new qLabel(oMCPWin)
+        oHeader.setText("MCP Servers Management")
+        oHeader.setStyleSheet("font-size: 14pt; font-weight: bold; color: " + C_PRIMARY_COLOR)
+        oVLayout.addWidget(oHeader)
+        
+        oMCPList = new qListWidget(oMCPWin)
+        oVLayout.addWidget(oMCPList)
+        
+        refreshMCPList()
+        
+        oFormLayout = new qVBoxLayout()
+        oVLayout.addLayout(oFormLayout)
+        
+        oNameRow = new qHBoxLayout()
+        oNameLbl = new qLabel(oMCPWin) { setText("Name:") }
+        oMCPNameInput = new qLineEdit(oMCPWin) { setPlaceholderText("e.g. my_server") }
+        oNameRow.addWidget(oNameLbl)
+        oNameRow.addWidget(oMCPNameInput)
+        oFormLayout.addLayout(oNameRow)
+        
+        oTransRow = new qHBoxLayout()
+        oTransLbl = new qLabel(oMCPWin) { setText("Transport:") }
+        oMCPTransportCmb = new qComboBox(oMCPWin)
+        oMCPTransportCmb.addItem("stdio", 0)
+        oMCPTransportCmb.addItem("http", 0)
+        oTransRow.addWidget(oTransLbl)
+        oTransRow.addWidget(oMCPTransportCmb)
+        oFormLayout.addLayout(oTransRow)
+        
+        oCmdRow = new qHBoxLayout()
+        oCmdLbl = new qLabel(oMCPWin) { setText("Cmd / URL:") }
+        oMCPCmdInput = new qLineEdit(oMCPWin) { setPlaceholderText("e.g. ring server.ring OR http://...") }
+        oCmdRow.addWidget(oCmdLbl)
+        oCmdRow.addWidget(oMCPCmdInput)
+        oFormLayout.addLayout(oCmdRow)
+        
+        oBtnRow = new qHBoxLayout()
+        oBtnAdd = new qPushButton(oMCPWin)
+        oBtnAdd.setText("Add Server")
+        oBtnAdd.setStyleSheet("background-color: #238636;")
+        oBtnAdd.setClickEvent("oFlashGUI.addMCPServer()")
+        
+        oBtnRemove = new qPushButton(oMCPWin)
+        oBtnRemove.setText("Remove Selected")
+        oBtnRemove.setStyleSheet("background-color: #da3633;")
+        oBtnRemove.setClickEvent("oFlashGUI.removeMCPServer()")
+        
+        oBtnRow.addWidget(oBtnAdd)
+        oBtnRow.addWidget(oBtnRemove)
+        oVLayout.addLayout(oBtnRow)
+        
+        oMCPWin.show()
+
+    func refreshMCPList
+        if isNULL(oMCPList) return ok
+        oMCPList.clear()
+        aServers = oCoreAgent.oSmartAgent.oAgentTools.getMCPServers()
+        for oS in aServers
+            oMCPList.addItem(oS[1] + " [" + oS[2] + "]")
+        next
+
+    func addMCPServer
+        cName = trim(oMCPNameInput.text())
+        cTrans = oMCPTransportCmb.currentText()
+        cCmdUrl = trim(oMCPCmdInput.text())
+        
+        if cName = "" or cCmdUrl = "" return ok
+        
+        oCoreAgent.oSmartAgent.oAgentTools.addMCPServerConfig(cName, cTrans, cCmdUrl)
+        
+        oMCPNameInput.setText("")
+        oMCPCmdInput.setText("")
+        refreshMCPList()
+
+    func removeMCPServer
+        nRow = oMCPList.currentRow()
+        if nRow < 0 return ok
+        
+        cText = oMCPList.item(nRow).text()
+        nSpace = substr(cText, " [")
+        if nSpace > 0
+            cName = left(cText, nSpace - 1)
+            oCoreAgent.oSmartAgent.oAgentTools.removeMCPServerConfig(cName)
+            refreshMCPList()
+        ok
 
 class GUIManager
     func displayAIMessage cMsg

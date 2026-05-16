@@ -39,7 +39,7 @@ class SmartAgent
     cCurrentFile = ""
     cSessionId = ""
     nTotalTokens = 0
-    
+    cWorkingDirectory = currentdir()
     # Session State
     bSessionAuthorized = false
     bLanguageDetected = false
@@ -61,7 +61,7 @@ class SmartAgent
         oAgentTools = new AgentTools()
         oLogger = new Logger()
         nTotalTokens = 0
-        oAIClient.setStreamMode(true)
+        oAIClient.setStreamMode(false)
         
         # Initialize advanced subsystems
         oSecurityLayer = new SecurityLayer()

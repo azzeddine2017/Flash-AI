@@ -1,5 +1,5 @@
 
 func context_summarizer() {
     files = list_files(".")
-    return "المشروع يحتوي على " + len(files) + " ملفاً. الهيكل الأساسي يعتمد على Ring Language. المكونات الرئيسية تشمل core_agent.ring و main.ring و ui_manager.ring."
+    return "The project contains " + len(files) + " files. The basic structure is based on Ring Language. The main components include core_agent.ring, main.ring, and ui_manager.ring."
 }

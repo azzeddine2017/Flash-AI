@@ -16,6 +16,9 @@ class AgentTools
     # Nesting depth for delegation
     nAgentDepth = 0
     
+    # MCP Integration
+    oMCPManager = new MCPClientManager
+    
     # ===================================================================
     # Constructor
     # ===================================================================
@@ -462,6 +465,19 @@ class AgentTools
                         ok
                     next
                     
+                    if oToolDef != NULL
+                        if isattribute(oToolDef, "is_mcp")
+                            if oToolDef.is_mcp
+                                aRes = oMCPManager.callTool(oToolDef.mcp_client, oToolDef.mcp_name, aParameters)
+                                if aRes[1]
+                                    return createSuccessResult(aRes[2])
+                                else
+                                    return createErrorResult(aRes[2])
+                                ok
+                            ok
+                        ok
+                    ok
+                    
                     if isfunction(cToolName)
                         if oToolDef != NULL
                             # Build the call string with named parameters extracted from aParameters
@@ -778,11 +794,212 @@ class AgentTools
         aBlacklist = [".env", "api_keys.json", "config/api_keys",
                       "smart_agent.ring", "core_agent.ring", "agent_tools.ring",
                       "ai_client.ring", "context_engine.ring", "security_layer.ring",
-                      "loadfiles.ring", "http_client.ring"]
+                      "loadfiles.ring", "http_client.ring", "mcp_client_manager.ring"]
         for cCore in aBlacklist
             if substr(cLower, cCore) return true ok
         next
         return false
+
+    # ===================================================================
+    # MCP Server Connection & Tool Registration
+    # ===================================================================
+    func connectMCPServer(cServerName, cTransport, cEndpoint, aArgs)
+        aMappedTools = []
+        if lower(cTransport) = "stdio"
+            aMappedTools = oMCPManager.connectStdio(cServerName, cEndpoint, aArgs)
+        elseif lower(cTransport) = "http"
+            aMappedTools = oMCPManager.connectHttp(cServerName, cEndpoint)
+        else
+            return false
+        ok
+        
+        if len(aMappedTools) = 0
+            see "  [!] No tools found on MCP Server: " + cServerName + nl
+            return true
+        ok
+        
+        # Register the tools dynamically
+        for oItem in aMappedTools
+            oClient = oItem[:client]
+            oToolDef = oItem[:toolDef]
+            
+            cMCPName = getValueFromList(oToolDef, "name", "")
+            if cMCPName = "" loop ok
+            
+            cPrefix = "mcp_" + substr(oClient.name, " ", "_") + "_"
+            cFlashName = cPrefix + cMCPName
+            
+            cDesc = getValueFromList(oToolDef, "description", "")
+            
+            aParams = []
+            oSchema = getValueFromList(oToolDef, "inputSchema", [])
+            oProps = getValueFromList(oSchema, "properties", [])
+            if type(oProps) = "LIST" and len(oProps) > 0
+                # Usually in Ring simplejson, objects are lists of pairs
+                if type(oProps[1]) = "LIST" and len(oProps[1]) >= 2
+                    for item in oProps
+                        cKey = item[1]
+                        oProp = item[2]
+                        cType = getValueFromList(oProp, "type", "string")
+                        cPDesc = getValueFromList(oProp, "description", "")
+                        aParams + [cKey, cPDesc, cType]
+                    next
+                ok
+            ok
+            
+            oNewTool = createToolFull(cFlashName, cDesc, aParams, "mcp_tool")
+            addattribute(oNewTool, "is_mcp")
+            addattribute(oNewTool, "mcp_client")
+            addattribute(oNewTool, "mcp_name")
+            oNewTool.is_mcp = true
+            oNewTool.mcp_client = oClient
+            oNewTool.mcp_name = cMCPName
+            
+            Add(aAvailableTools, oNewTool)
+            see "  [+] Registered MCP Tool: " + cFlashName + nl
+        next
+        return true
+        
+    # ===================================================================
+    # Auto-Connect to MCP Servers from JSON config
+    # ===================================================================
+    func autoConnectMCPServers()
+        cConfigFile = APP_PATH("config/mcp_servers.json")
+        if not fexists(cConfigFile) return false ok
+        
+        try
+            cJsonCode = read(cConfigFile)
+            oConfig = json2list(cJsonCode)
+            
+            if type(oConfig) = "LIST"
+                oServers = getValueFromList(oConfig, "mcpServers", [])
+                if type(oServers) = "LIST" and len(oServers) > 0
+                    if type(oServers[1]) = "LIST" and len(oServers[1]) = 2
+                        # Ring associative list format
+                        for oServerPair in oServers
+                            cServerName = oServerPair[1]
+                            oServerConfig = oServerPair[2]
+                            
+                            # Skip invalid entries (e.g. non-config items)
+                            if not islist(oServerConfig) loop ok
+                            
+                            cCommand = getValueFromList(oServerConfig, "command", "")
+                            if cCommand = "" loop ok
+                            
+                            cTransport = getValueFromList(oServerConfig, "transport", "stdio")
+                            
+                            see "  [*] Auto-connecting to MCP Server: " + cServerName + "..." + nl
+                            if lower(cTransport) = "stdio"
+                                aArgs = getValueFromList(oServerConfig, "args", [])
+                                if type(aArgs) != "LIST" aArgs = [] ok
+                                if connectMCPServer(cServerName, "stdio", cCommand, aArgs)
+                                    see "  [+] Connected to " + cServerName + " successfully!" + nl
+                                else
+                                    see "  [-] Failed to connect to " + cServerName + nl
+                                ok
+                            elseif lower(cTransport) = "http"
+                                cUrl = getValueFromList(oServerConfig, "url", "")
+                                if cUrl != ""
+                                    if connectMCPServer(cServerName, "http", cUrl, [])
+                                        see "  [+] Connected to " + cServerName + " successfully!" + nl
+                                    else
+                                        see "  [-] Failed to connect to " + cServerName + nl
+                                    ok
+                                ok
+                            ok
+                        next
+                    ok
+                ok
+            ok
+        catch
+            see "  [-] Error loading MCP Servers config: " + cCatchError + nl
+        done
+        return true
+        
+    # ===================================================================
+    # MCP Servers Config Management (Unified API)
+    # ===================================================================
+    func getMCPServers()
+        cConfigFile = APP_PATH("config/mcp_servers.json")
+        aRes = []
+        if fexists(cConfigFile)
+            try
+                oConfig = json2list(read(cConfigFile))
+                oServersList = getValueFromList(oConfig, "mcpServers", [])
+                if type(oServersList) = "LIST" and len(oServersList) > 0 and type(oServersList[1]) = "LIST"
+                    for oServerPair in oServersList
+                        Add(aRes, [ oServerPair[1], getValueFromList(oServerPair[2], "transport", "stdio"), oServerPair[2] ])
+                    next
+                ok
+            catch done
+        ok
+        return aRes
+
+    func addMCPServerConfig(cName, cTrans, cCmdUrl)
+        cConfigFile = APP_PATH("config/mcp_servers.json")
+        oConfig = [["mcpServers", []]]
+        if fexists(cConfigFile)
+            try
+                oConfig = json2list(read(cConfigFile))
+            catch done
+        ok
+        
+        oServersList = getValueFromList(oConfig, "mcpServers", [])
+        if type(oServersList) != "LIST" or len(oServersList) = 0 or type(oServersList[1]) != "LIST"
+            oServersList = []
+            oConfig = [["mcpServers", oServersList]]
+        ok
+        
+        oNewServer = []
+        Add(oNewServer, ["transport", cTrans])
+        if cTrans = "stdio"
+            aParts = split(cCmdUrl, " ")
+            if len(aParts) > 0
+                Add(oNewServer, ["command", aParts[1]])
+                aArgs = []
+                for i = 2 to len(aParts) Add(aArgs, aParts[i]) next
+                Add(oNewServer, ["args", aArgs])
+            ok
+        else
+            Add(oNewServer, ["url", cCmdUrl])
+        ok
+        
+        for i = 1 to len(oServersList)
+            if type(oServersList[i]) = "LIST" and oServersList[i][1] = cName
+                del(oServersList, i)
+                exit
+            ok
+        next
+        
+        Add(oServersList, [cName, oNewServer])
+        write(cConfigFile, jsonEncodeValue([["mcpServers", oServersList]]))
+        
+        # Connect dynamically
+        if cTrans = "stdio"
+            return connectMCPServer("stdio", getValueFromList(oNewServer, "command", ""), getValueFromList(oNewServer, "args", []))
+        else
+            return connectMCPServer("http", cCmdUrl, [])
+        ok
+
+    func removeMCPServerConfig(cName)
+        cConfigFile = APP_PATH("config/mcp_servers.json")
+        if fexists(cConfigFile)
+            try
+                oConfig = json2list(read(cConfigFile))
+                oServersList = getValueFromList(oConfig, "mcpServers", [])
+                if type(oServersList) = "LIST" and len(oServersList) > 0 and type(oServersList[1]) = "LIST"
+                    for i = 1 to len(oServersList)
+                        if type(oServersList[i]) = "LIST" and oServersList[i][1] = cName
+                            del(oServersList, i)
+                            write(cConfigFile, jsonEncodeValue([["mcpServers", oServersList]]))
+                            return true
+                        ok
+                    next
+                ok
+            catch done
+        ok
+        return false
+
     # ===================================================================
     # Filtered Function Declarations (Gemini)
     # ===================================================================
@@ -790,7 +1007,10 @@ class AgentTools
         cJSON = "["
         bFirst = true
         for oTool in aAvailableTools
-            if find(aAllowedTools, oTool.name) = 0 loop ok
+            bIsMCP = false
+            try bIsMCP = oTool.is_mcp catch bIsMCP = false done
+            
+            if find(aAllowedTools, oTool.name) = 0 and not bIsMCP loop ok
             
             if not bFirst cJSON += "," ok
             bFirst = false
@@ -825,7 +1045,10 @@ class AgentTools
         cJSON = "["
         bFirst = true
         for oTool in aAvailableTools
-            if find(aAllowedTools, oTool.name) = 0 loop ok
+            bIsMCP = false
+            try bIsMCP = oTool.is_mcp catch bIsMCP = false done
+            
+            if find(aAllowedTools, oTool.name) = 0 and not bIsMCP loop ok
             
             if not bFirst cJSON += "," ok
             bFirst = false

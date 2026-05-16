@@ -22,7 +22,7 @@ class AIClient
     # AIClient initialized with provider: gemini
     cCurrentProvider = "gemini"  # Default provider
     
-    cGeminiModel = "gemini-3-flash-preview" # 
+    cGeminiModel = "gemini-3.1-flash-lite" # 
     cOpenAIModel = "gpt-4.1"
     cClaudeModel = "claude-3.5-sonnet"
     cOpenRouterModel = "x-ai/grok-4.1-fast:free"

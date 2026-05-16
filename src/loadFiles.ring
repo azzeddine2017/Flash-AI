@@ -6,6 +6,7 @@
 load "stdlib.ring"
 load "jsonlib.ring"
 load "libcurl.ring"
+load "mcp.ring"
 
 load "logger.ring"
 load "utils.ring"
@@ -24,6 +25,7 @@ load "context_intelligence.ring"
 load "reflection_engine.ring"
 load "agent_state_machine.ring"
 load "http_client.ring"
+load "mcp_client_manager.ring"
 
 # Domain tool modules (standalone functions used by AgentTools dispatcher)
 load "tools/file_tools.ring"

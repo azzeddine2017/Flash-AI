@@ -45,6 +45,9 @@ class oApp
         oUIManager.setToolsCount(oCoreAgent.getToolsCount())
 
         oUIManager.showHeader()
+        
+        # Connect to MCP servers now that we are ready
+        oCoreAgent.oSmartAgent.oAgentTools.autoConnectMCPServers()
 
         # Auth check loop for starting up
         while not oCoreAgent.hasValidAPIKey()
@@ -324,6 +327,7 @@ class oApp
             ["/load "       , "Load a saved session"],
             ["/sessions"    , "List saved sessions"],
             ["/tools"       , "List available AI tools"],
+            ["/mcp"         , "Manage MCP Servers"],
             ["/config"      , "Show current configuration"],
             ["/set "        , "Change a setting"],
             ["/run "        , "Execute a Ring file"],
@@ -410,7 +414,7 @@ class oApp
         if cPartial = "" return [] ok
 
         aSlashCmds = ["/model", "/provider", "/debug", "/tokens", "/history",
-                      "/save", "/load", "/sessions", "/tools", "/clear", 
+                      "/save", "/load", "/sessions", "/tools", "/mcp", "/clear", 
                       "/config", "/set", "/run", "/help", "/authorize", "/cmd", "/chatlog", "/multi", "/theme", "/lang", "/workspace",
                       "/plan", "/execute", "/auto"]
         
@@ -470,6 +474,9 @@ class oApp
                 return
             on "/tools"
                 showToolsList()
+                return
+            on "/mcp"
+                manageMCPServers()
                 return
             on "/tokens"
                 showTokenInfo()
@@ -537,6 +544,39 @@ class oApp
         ok
 
         # --- Prefix-based / commands ---
+        if left(cLowerCmd, 5) = "/mcp "
+            aParts = split(cCommand, " ")
+            if len(aParts) >= 3 and lower(trim(aParts[2])) = "connect"
+                cTransport = trim(aParts[3])
+                if lower(cTransport) = "stdio" and len(aParts) >= 4
+                    cCmd = trim(aParts[4])
+                    aArgs = []
+                    for i = 5 to len(aParts) aArgs + trim(aParts[i]) next
+                    oUIManager.showSuccess("Connecting to MCP via STDIO...")
+                    bRes = oCoreAgent.oSmartAgent.oAgentTools.connectMCPServer("stdio", cCmd, aArgs)
+                    if bRes
+                        oUIManager.showSuccess("MCP Server connected and tools registered.")
+                    else
+                        oUIManager.showError("Failed to connect to MCP Server.")
+                    ok
+                elseif lower(cTransport) = "http" and len(aParts) >= 4
+                    cUrl = trim(aParts[4])
+                    oUIManager.showSuccess("Connecting to MCP via HTTP...")
+                    bRes = oCoreAgent.oSmartAgent.oAgentTools.connectMCPServer("http", cUrl, [])
+                    if bRes
+                        oUIManager.showSuccess("MCP Server connected and tools registered.")
+                    else
+                        oUIManager.showError("Failed to connect to MCP Server.")
+                    ok
+                else
+                    oUIManager.showError("Usage: /mcp connect <stdio/http> <cmd/url> [args...]")
+                ok
+            else
+                oUIManager.showError("Usage: /mcp connect <stdio/http> <cmd/url> [args...]")
+            ok
+            return
+        ok
+
         if left(cLowerCmd, 5) = "/cmd "
             cExec = trim(substr(cCommand, 6))
             if cExec != ""
@@ -810,6 +850,7 @@ class oApp
                 ? "    /load <session>    - Load a saved session"
                 ? "    /sessions          - List saved sessions"
                 ? "    /tools             - List available AI tools"
+                ? "    /mcp             - Manage MCP Servers"
                 ? "    /config            - Show current configuration"
                 ? "    /set <key> <val>   - Change a setting"
                 ? "    /run <file>        - Execute a Ring file"
@@ -1060,6 +1101,75 @@ class oApp
         next
         ? ""
         resetColor()
+    }
+
+    func manageMCPServers() {
+        bMenuRunning = true
+        while bMenuRunning
+            see char(27) + "[2J" + char(13)
+            ? ""
+            setColor(CYAN)
+            ? "  MCP Server Management"
+            setColor(DARKGREY)
+            ? "  " + copy("-", 40)
+            ? ""
+            resetColor()
+            
+            aServers = oCoreAgent.oSmartAgent.oAgentTools.getMCPServers()
+            if len(aServers) = 0
+                ? "  No MCP servers configured."
+            else
+                ? "  Configured Servers:"
+                for i = 1 to len(aServers)
+                    ? "  [" + i + "] " + aServers[i][1] + " (" + aServers[i][2] + ")"
+                next
+            ok
+            
+            ? ""
+            ? "  Commands:"
+            ? "  " + copy("-", 40)
+            ? "    add <name> <transport> <cmd_or_url> - Add new MCP server"
+            ? "    remove <name>                       - Remove server"
+            ? "    exit                                - Back to chat"
+            ? ""
+            
+            see "  mcp> "
+            give cInput
+            cInput = trim(cInput)
+            aParts = split(cInput, " ")
+            
+            if len(aParts) = 0 loop ok
+            cAction = lower(aParts[1])
+            
+            switch cAction
+                on "exit"
+                    bMenuRunning = false
+                on "add"
+                    if len(aParts) >= 4
+                        cName = aParts[2]
+                        cTrans = aParts[3]
+                        cCmdUrl = ""
+                        for i = 4 to len(aParts) cCmdUrl += aParts[i] + " " next
+                        cCmdUrl = trim(cCmdUrl)
+                        oCoreAgent.oSmartAgent.oAgentTools.addMCPServerConfig(cName, cTrans, cCmdUrl)
+                        ? "Server added successfully!"
+                        sleep(1)
+                    else
+                        ? "Invalid syntax. Use: add <name> <transport> <cmd_or_url>"
+                        sleep(1)
+                    ok
+                on "remove"
+                    if len(aParts) >= 2
+                        oCoreAgent.oSmartAgent.oAgentTools.removeMCPServerConfig(aParts[2])
+                        ? "Server removed."
+                        sleep(1)
+                    else
+                        ? "Invalid syntax. Use: remove <name>"
+                        sleep(1)
+                    ok
+            off
+        end
+        oUIManager.showHeader()
     }
 
     func nRows()
