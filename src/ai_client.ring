@@ -19,19 +19,22 @@ class AIClient
     cOpenAIAPIKey = ""
     cClaudeAPIKey = ""
     cOpenRouterAPIKey = ""
+    cDeepSeekAPIKey = ""
     # AIClient initialized with provider: gemini
     cCurrentProvider = "gemini"  # Default provider
     
-    cGeminiModel = "gemini-3.1-flash-lite" # 
+    cGeminiModel = "gemini-3.1-flash-lite" # gemini-flash-lite-latest
     cOpenAIModel = "gpt-4.1"
     cClaudeModel = "claude-3.5-sonnet"
     cOpenRouterModel = "x-ai/grok-4.1-fast:free"
+    cDeepSeekModel = "deepseek-chat"
 
     # API Endpoints
     cGeminiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/"+cGeminiModel+":generateContent"
     cOpenAIEndpoint = "https://api.openai.com/v1/chat/completions"
     cClaudeEndpoint = "https://api.anthropic.com/v1/messages"
     cOpenRouterEndpoint = "https://openrouter.ai/api/v1/chat/completions"
+    cDeepSeekEndpoint = "https://api.deepseek.com/chat/completions"
     
     # Request settings
     nTimeout = 60
@@ -121,6 +124,11 @@ class AIClient
                             self.cOpenRouterAPIKey = getValue(oOpenRouter, "api_key", "")
                         ok
 
+                        oDeepSeek = getValue(oKeys, "deepseek", [])
+                        if type(oDeepSeek) = "LIST"
+                            self.cDeepSeekAPIKey = getValue(oDeepSeek, "api_key", "")
+                        ok
+
                         self.cCurrentProvider = getValue(oKeys, "default_provider", "gemini")
                         # see "[DEBUG] Loaded Provider: " + self.cCurrentProvider + nl
                         self.nMaxTokens       = getValue(oKeys, "max_tokens", 4096)
@@ -152,6 +160,7 @@ class AIClient
     "openai": { "api_key": "' + self.cOpenAIAPIKey + '" },
     "claude": { "api_key": "' + self.cClaudeAPIKey + '" },
     "openrouter": { "api_key": "' + self.cOpenRouterAPIKey + '" },
+    "deepseek": { "api_key": "' + self.cDeepSeekAPIKey + '" },
     "default_provider": "' + self.cCurrentProvider + '",
     "max_tokens": ' + self.nMaxTokens + ',
     "temperature": ' + self.nTemperature + ',
@@ -172,7 +181,7 @@ class AIClient
     # Set API Provider
     # ===================================================================
     func setProvider(cProvider)
-        if cProvider = "gemini" or cProvider = "openai" or cProvider = "claude" or cProvider = "openrouter"
+        if cProvider = "gemini" or cProvider = "openai" or cProvider = "claude" or cProvider = "openrouter" or cProvider = "deepseek"
             cCurrentProvider = cProvider
             see "AI Provider set to: " + cProvider + nl
             return true
@@ -188,6 +197,7 @@ class AIClient
             on "openai" cOpenAIModel = cModel
             on "claude" cClaudeModel = cModel
             on "openrouter" cOpenRouterModel = cModel
+            on "deepseek" cDeepSeekModel = cModel
         off
         see "AI Model set to: " + cModel + nl
     
@@ -202,6 +212,7 @@ class AIClient
             on "openai" cKey = cOpenAIAPIKey
             on "claude" cKey = cClaudeAPIKey
             on "openrouter" cKey = cOpenRouterAPIKey
+            on "deepseek" cKey = cDeepSeekAPIKey
         off
         return (cKey != "" and not substr(lower(cKey), "your_") and len(cKey) > 10)
 
@@ -211,6 +222,7 @@ class AIClient
             on "openai" cOpenAIAPIKey = cKey
             on "claude" cClaudeAPIKey = cKey
             on "openrouter" cOpenRouterAPIKey = cKey
+            on "deepseek" cDeepSeekAPIKey = cKey
         off
         
         cConfigJSON = '{
@@ -218,6 +230,7 @@ class AIClient
     "openai": { "api_key": "' + self.cOpenAIAPIKey + '" },
     "claude": { "api_key": "' + self.cClaudeAPIKey + '" },
     "openrouter": { "api_key": "' + self.cOpenRouterAPIKey + '" },
+    "deepseek": { "api_key": "' + self.cDeepSeekAPIKey + '" },
     "default_provider": "' + self.cCurrentProvider + '",
     "max_tokens": ' + self.nMaxTokens + ',
     "temperature": ' + self.nTemperature + ',
@@ -246,7 +259,9 @@ class AIClient
                 on "claude"
                     return sendClaudeRequest(cMessage, cSystemPrompt, aContext)
                 on "openrouter"
-                    return sendOpenRouterRequest(cMessage, cSystemPrompt, aContext)
+                    return sendOpenRouterRequest(cMessage, cSystemPrompt, aContext, "")
+                on "deepseek"
+                    return sendDeepSeekRequest(cMessage, cSystemPrompt, aContext, "")
                 other
                     oRes = createErrorResponse("Invalid AI provider: " + cCurrentProvider)
             off
@@ -1204,6 +1219,94 @@ class AIClient
         catch
             return createErrorResponse("Failed to parse Claude response: " + cCatchError)
         done
+
+    # ===================================================================
+    # Send DeepSeek Request
+    # ===================================================================
+    func sendDeepSeekRequest(cMessage, cSystemPrompt, aContext, cToolsJSON)
+        if self.cDeepSeekAPIKey = "" or self.cDeepSeekAPIKey = "YOUR_DEEPSEEK_API_KEY_HERE"
+            return createErrorResponse("DeepSeek API key not configured")
+        ok
+        
+        # Build messages array
+        aMessages = []
+        if cSystemPrompt != ""
+            Add(aMessages, [ ["role", "system"], ["content", cSystemPrompt] ])
+        ok
+        
+        # Add context messages
+        if type(aContext) = "LIST" and len(aContext) > 0
+            for oContextItem in aContext
+                if type(oContextItem) = "LIST"
+                    cRole = getValue(oContextItem, "role", "")
+                    cContent = getValue(oContextItem, "content", "")
+                    
+                    if cRole != ""
+                        aMsgDict = [ ["role", cRole] ]
+                        if cContent != "" Add(aMsgDict, ["content", cContent]) ok
+                        
+                        cToolCallID = getValue(oContextItem, "tool_call_id", "")
+                        if cToolCallID != "" Add(aMsgDict, ["tool_call_id", cToolCallID]) ok
+                        
+                        aToolCalls = getValue(oContextItem, "tool_calls", [])
+                        if type(aToolCalls) = "LIST" and len(aToolCalls) > 0 Add(aMsgDict, ["tool_calls", aToolCalls]) ok
+                        
+                        cName = getValue(oContextItem, "name", "")
+                        if cName != "" Add(aMsgDict, ["name", cName]) ok
+                        
+                        Add(aMessages, aMsgDict)
+                    ok
+                ok
+            next
+        ok
+        
+        # Add user message ONLY if provided AND not already the last message in context
+        if cMessage != ""
+            # Check if the last context message is already this user message (avoid duplication)
+            bAlreadyInContext = false
+            if len(aMessages) > 0
+                oLastMsg = aMessages[len(aMessages)]
+                if type(oLastMsg) = "LIST"
+                    cLastRole = getValue(oLastMsg, "role", "")
+                    cLastContent = getValue(oLastMsg, "content", "")
+                    if cLastRole = "user" and cLastContent = cMessage
+                        bAlreadyInContext = true
+                    ok
+                ok
+            ok
+            if not bAlreadyInContext
+                Add(aMessages, [ ["role", "user"], ["content", cMessage] ])
+            ok
+        ok
+        
+        # Build request JSON manually
+        cMessagesJSON = jsonEncodeRecursive(aMessages)
+        cModelJSON = '"' + self.cDeepSeekModel + '"'
+        
+        cRequestJSON = '{' +
+            '"model":' + cModelJSON + ',' +
+            '"messages":' + cMessagesJSON + ',' +
+            '"temperature":' + self.nTemperature + ',' +
+            '"max_tokens":' + self.nMaxTokens
+
+        # Add tools if provided
+        if cToolsJSON != "" and cToolsJSON != null and len(cToolsJSON) > 2
+            cRequestJSON += ',"tools":' + cToolsJSON
+            cRequestJSON += ',"tool_choice":"auto"'
+        ok
+
+        cRequestJSON += '}'
+        
+        # Send HTTP request
+        cResponse = sendHTTPRequest(self.cDeepSeekEndpoint, cRequestJSON, "POST", [
+            "Content-Type: application/json",
+            "Authorization: Bearer " + self.cDeepSeekAPIKey
+        ])
+        
+        return parseDeepSeekResponse(cResponse)
+
+    func parseDeepSeekResponse(cResponse)
+        return parseOpenRouterResponse(cResponse)
 
     # ===================================================================
     # Extract Thoughts from parts list

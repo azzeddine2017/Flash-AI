@@ -248,6 +248,7 @@ class CoreAgent
             on "openai" cMdl = oSmartAgent.oAIClient.cOpenAIModel
             on "claude" cMdl = oSmartAgent.oAIClient.cClaudeModel
             on "openrouter" cMdl = oSmartAgent.oAIClient.cOpenRouterModel
+            on "deepseek" cMdl = oSmartAgent.oAIClient.cDeepSeekModel
         off
         return [
             ["agent",       oSmartAgent.cAgentName + " v" + oSmartAgent.cAgentVersion],

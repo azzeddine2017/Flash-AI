@@ -283,6 +283,7 @@ class FlashGUI
             on "openai" cMdl = oCoreAgent.oSmartAgent.oAIClient.cOpenAIModel
             on "claude" cMdl = oCoreAgent.oSmartAgent.oAIClient.cClaudeModel
             on "openrouter" cMdl = oCoreAgent.oSmartAgent.oAIClient.cOpenRouterModel
+            on "deepseek" cMdl = oCoreAgent.oSmartAgent.oAIClient.cDeepSeekModel
         off
         oModelLabel.setText("Model: " + cMdl) 
         oModelLabel.setStyleSheet("color: #8b949e; font-size: 9pt; padding: 5px;")
@@ -423,6 +424,7 @@ class FlashGUI
             on "openai" cMdl = oCoreAgent.oSmartAgent.oAIClient.cOpenAIModel
             on "claude" cMdl = oCoreAgent.oSmartAgent.oAIClient.cClaudeModel
             on "openrouter" cMdl = oCoreAgent.oSmartAgent.oAIClient.cOpenRouterModel
+            on "deepseek" cMdl = oCoreAgent.oSmartAgent.oAIClient.cDeepSeekModel
         off
         oModelLabel.setText("Model: " + cMdl)
         oProviderLabel.setText("Provider: " + oCoreAgent.oSmartAgent.oAIClient.cCurrentProvider)
@@ -488,6 +490,7 @@ class FlashGUI
                     on "openai" cMdl = oCoreAgent.oSmartAgent.oAIClient.cOpenAIModel
                     on "claude" cMdl = oCoreAgent.oSmartAgent.oAIClient.cClaudeModel
                     on "openrouter" cMdl = oCoreAgent.oSmartAgent.oAIClient.cOpenRouterModel
+                    on "deepseek" cMdl = oCoreAgent.oSmartAgent.oAIClient.cDeepSeekModel
                 off
                 oModelLabel.setText("Model: " + cMdl)
                 oProviderLabel.setText("Provider: " + oCoreAgent.oSmartAgent.oAIClient.cCurrentProvider)

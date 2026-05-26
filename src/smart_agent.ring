@@ -575,6 +575,11 @@ class SmartAgent
             cToolsJSON = self.oAgentTools.getFilteredOpenAIJSON(aRelevant)
             return self.oAIClient.sendOpenRouterRequest(cMessage, oContextMap[:system_prompt], oContextMap[:context_array], cToolsJSON)
             
+        elseif self.oAIClient.cCurrentProvider = "deepseek"
+            # Send only the relevant subset to DeepSeek
+            cToolsJSON = self.oAgentTools.getFilteredOpenAIJSON(aRelevant)
+            return self.oAIClient.sendDeepSeekRequest(cMessage, oContextMap[:system_prompt], oContextMap[:context_array], cToolsJSON)
+            
         elseif self.oAIClient.cCurrentProvider = "gemini"
             # Send only the relevant subset to Gemini
             cToolsJSON = self.oAgentTools.getFilteredGeminiJSON(aRelevant)
@@ -774,7 +779,7 @@ class SmartAgent
             cResultText = oToolResult[:error]
         ok
 
-        if isObject(self.oAIClient) and self.oAIClient.cCurrentProvider = "openrouter"
+        if isObject(self.oAIClient) and (self.oAIClient.cCurrentProvider = "openrouter" or self.oAIClient.cCurrentProvider = "deepseek")
             self.oContextEngine.addToolCallToHistory(oAIResponse[:message], oAIResponse[:tool_calls])
             self.oContextEngine.addToolResultToHistory(oAIResponse[:tool_call_id], cResultText, oAIResponse[:function_name])
         elseif isObject(self.oAIClient) and self.oAIClient.cCurrentProvider = "gemini"

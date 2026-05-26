@@ -17,13 +17,13 @@ _cookies.txt
 chats/
 *.json
 
-ai\logs\
+ai/logs/
 *.tmp
 
-ai\logs\
+ai/logs/
 *.log
 
-ai\memory\
+ai/memory/
 *json
 
 # IDE / Editor

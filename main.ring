@@ -318,7 +318,7 @@ class oApp
             ["/multi"       , "Enter Multi-line editor mode"],
             ["/workspace "  , "Change active workspace directory"],
             ["/model "      , "Change AI model"],
-            ["/provider "   , "Switch AI provider (gemini/openai/claude/openrouter)"],
+            ["/provider "   , "Switch AI provider (gemini/openai/claude/openrouter/deepseek)"],
             ["/debug "      , "Toggle debug mode"],
             ["/tokens"      , "Show token usage"],
             ["/history "    , "Show last n user commands"],
@@ -651,7 +651,7 @@ class oApp
                     ok
                 end
             else
-                oUIManager.showError("Invalid provider. Use: gemini, openai, claude, openrouter")
+                oUIManager.showError("Invalid provider. Use: gemini, openai, claude, openrouter, deepseek")
             ok
             return
         ok
@@ -841,7 +841,7 @@ class oApp
                 ? "  Slash Commands:"
                 setColor(LIGHTGREEN)
                 ? "    /model <name>      - Change AI model"
-                ? "    /provider <name>   - Switch AI provider (gemini/openai/claude)"
+                ? "    /provider <name>   - Switch AI provider (gemini/openai/claude/openrouter/deepseek)"
                 ? "    /debug on|off      - Toggle debug mode"
                 ? "    /tokens            - Show token usage"
                 ? "    /history [n]       - Show last n user commands"
@@ -888,9 +888,11 @@ class oApp
                 setColor(CYAN)
                 ? "  /provider Command:"
                 setColor(WHITE)
-                ? "    /provider gemini  - Google Gemini"
-                ? "    /provider openai  - OpenAI GPT"
-                ? "    /provider claude  - Anthropic Claude"
+                ? "    /provider gemini      - Google Gemini"
+                ? "    /provider openai      - OpenAI GPT"
+                ? "    /provider claude      - Anthropic Claude"
+                ? "    /provider openrouter  - OpenRouter"
+                ? "    /provider deepseek    - DeepSeek"
                 ? ""
             other
                 oUIManager.showError("Unknown help topic: " + cTopic)
@@ -1034,7 +1036,7 @@ class oApp
                 if oCoreAgent.setProvider(lower(cVal))
                     oUIManager.showSuccess("Provider set to: " + lower(cVal))
                 else
-                    oUIManager.showError("Invalid provider. Use: gemini, openai, claude")
+                    oUIManager.showError("Invalid provider. Use: gemini, openai, claude, openrouter, deepseek")
                 ok
             on "model"
                 oCoreAgent.setModel(cVal)

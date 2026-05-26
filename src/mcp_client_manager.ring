@@ -27,7 +27,7 @@ class MCPClientManager
             Args = aArgs
         }
         
-        oClient.oTransport = oTransport
+        oClient.oTransport = ref(oTransport)
         oClient.oTransport.run(oClient)
         
         # Give the child process time to start its stdin loop
@@ -75,7 +75,7 @@ class MCPClientManager
             Url = cUrl
         }
         
-        oClient.oTransport = oTransport
+        oClient.oTransport = ref(oTransport)
         oClient.oTransport.run(oClient)
         
         # Initialize connection

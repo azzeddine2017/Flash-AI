@@ -1,1 +1,0 @@
-see "Hello from Ring MCP!" + nl

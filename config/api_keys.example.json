@@ -11,6 +11,9 @@
     "openrouter": {
         "api_key": "[ENCRYPTION_KEY]"
     },
+    "deepseek": {
+        "api_key": "[ENCRYPTION_KEY]"
+    },
     "default_provider": "gemini",
     "max_tokens": 4096,
     "temperature": 0.70,
