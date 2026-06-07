@@ -79,7 +79,7 @@ class oApp
         end
 
         while bRunning {
-            # عرض شريط الحالة قبل المدخلات
+            # Display status bar before input
             oUIManager.showStatusBar(oCoreAgent.oSmartAgent.cExecutionMode, oCoreAgent.oSmartAgent.nTotalTokens)
             
             # deepagents-style prompt: | >
@@ -97,7 +97,7 @@ class oApp
     }
 
     func prepareConsole {
-        setConsoleTitle("FLASH AI v2.0 — Deep Agent Terminal")
+        setConsoleTitle("FLASH AI v2.0 — Agent Terminal")
         showCursor()
     }
 
@@ -106,6 +106,7 @@ class oApp
         setColor(YELLOW)
         ? "  Session ended. Goodbye!"
         resetColor()
+        
     }
 
     # ===================================================================
@@ -318,7 +319,7 @@ class oApp
             ["/multi"       , "Enter Multi-line editor mode"],
             ["/workspace "  , "Change active workspace directory"],
             ["/model "      , "Change AI model"],
-            ["/provider "   , "Switch AI provider (gemini/openai/claude/openrouter/deepseek)"],
+            ["/provider "   , "Switch AI provider (gemini/openai/claude/openrouter/deepseek/nvidia)"],
             ["/debug "      , "Toggle debug mode"],
             ["/tokens"      , "Show token usage"],
             ["/history "    , "Show last n user commands"],
@@ -651,7 +652,7 @@ class oApp
                     ok
                 end
             else
-                oUIManager.showError("Invalid provider. Use: gemini, openai, claude, openrouter, deepseek")
+                oUIManager.showError("Invalid provider. Use: gemini, openai, claude, openrouter, deepseek, nvidia")
             ok
             return
         ok
@@ -841,7 +842,7 @@ class oApp
                 ? "  Slash Commands:"
                 setColor(LIGHTGREEN)
                 ? "    /model <name>      - Change AI model"
-                ? "    /provider <name>   - Switch AI provider (gemini/openai/claude/openrouter/deepseek)"
+                ? "    /provider <name>   - Switch AI provider (gemini/openai/claude/openrouter/deepseek/nvidia)"
                 ? "    /debug on|off      - Toggle debug mode"
                 ? "    /tokens            - Show token usage"
                 ? "    /history [n]       - Show last n user commands"
@@ -893,6 +894,7 @@ class oApp
                 ? "    /provider claude      - Anthropic Claude"
                 ? "    /provider openrouter  - OpenRouter"
                 ? "    /provider deepseek    - DeepSeek"
+                ? "    /provider nvidia      - Nvidia"
                 ? ""
             other
                 oUIManager.showError("Unknown help topic: " + cTopic)
@@ -1036,7 +1038,7 @@ class oApp
                 if oCoreAgent.setProvider(lower(cVal))
                     oUIManager.showSuccess("Provider set to: " + lower(cVal))
                 else
-                    oUIManager.showError("Invalid provider. Use: gemini, openai, claude, openrouter, deepseek")
+                    oUIManager.showError("Invalid provider. Use: gemini, openai, claude, openrouter, deepseek, nvidia")
                 ok
             on "model"
                 oCoreAgent.setModel(cVal)

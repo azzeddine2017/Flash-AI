@@ -249,6 +249,7 @@ class CoreAgent
             on "claude" cMdl = oSmartAgent.oAIClient.cClaudeModel
             on "openrouter" cMdl = oSmartAgent.oAIClient.cOpenRouterModel
             on "deepseek" cMdl = oSmartAgent.oAIClient.cDeepSeekModel
+            on "nvidia" cMdl = oSmartAgent.oAIClient.cNvidiaModel
         off
         return [
             ["agent",       oSmartAgent.cAgentName + " v" + oSmartAgent.cAgentVersion],

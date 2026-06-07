@@ -284,6 +284,7 @@ class FlashGUI
             on "claude" cMdl = oCoreAgent.oSmartAgent.oAIClient.cClaudeModel
             on "openrouter" cMdl = oCoreAgent.oSmartAgent.oAIClient.cOpenRouterModel
             on "deepseek" cMdl = oCoreAgent.oSmartAgent.oAIClient.cDeepSeekModel
+            on "nvidia" cMdl = oCoreAgent.oSmartAgent.oAIClient.cNvidiaModel
         off
         oModelLabel.setText("Model: " + cMdl) 
         oModelLabel.setStyleSheet("color: #8b949e; font-size: 9pt; padding: 5px;")
@@ -425,6 +426,7 @@ class FlashGUI
             on "claude" cMdl = oCoreAgent.oSmartAgent.oAIClient.cClaudeModel
             on "openrouter" cMdl = oCoreAgent.oSmartAgent.oAIClient.cOpenRouterModel
             on "deepseek" cMdl = oCoreAgent.oSmartAgent.oAIClient.cDeepSeekModel
+            on "nvidia" cMdl = oCoreAgent.oSmartAgent.oAIClient.cNvidiaModel
         off
         oModelLabel.setText("Model: " + cMdl)
         oProviderLabel.setText("Provider: " + oCoreAgent.oSmartAgent.oAIClient.cCurrentProvider)
@@ -491,6 +493,7 @@ class FlashGUI
                     on "claude" cMdl = oCoreAgent.oSmartAgent.oAIClient.cClaudeModel
                     on "openrouter" cMdl = oCoreAgent.oSmartAgent.oAIClient.cOpenRouterModel
                     on "deepseek" cMdl = oCoreAgent.oSmartAgent.oAIClient.cDeepSeekModel
+                    on "nvidia" cMdl = oCoreAgent.oSmartAgent.oAIClient.cNvidiaModel
                 off
                 oModelLabel.setText("Model: " + cMdl)
                 oProviderLabel.setText("Provider: " + oCoreAgent.oSmartAgent.oAIClient.cCurrentProvider)

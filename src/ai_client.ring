@@ -20,6 +20,7 @@ class AIClient
     cClaudeAPIKey = ""
     cOpenRouterAPIKey = ""
     cDeepSeekAPIKey = ""
+    cNvidiaAPIKey = ""
     # AIClient initialized with provider: gemini
     cCurrentProvider = "gemini"  # Default provider
     
@@ -28,6 +29,7 @@ class AIClient
     cClaudeModel = "claude-3.5-sonnet"
     cOpenRouterModel = "x-ai/grok-4.1-fast:free"
     cDeepSeekModel = "deepseek-chat"
+    cNvidiaModel = "qwen/qwen3.5-397b-a17b"
 
     # API Endpoints
     cGeminiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/"+cGeminiModel+":generateContent"
@@ -35,6 +37,7 @@ class AIClient
     cClaudeEndpoint = "https://api.anthropic.com/v1/messages"
     cOpenRouterEndpoint = "https://openrouter.ai/api/v1/chat/completions"
     cDeepSeekEndpoint = "https://api.deepseek.com/chat/completions"
+    cNvidiaEndpoint = "https://integrate.api.nvidia.com/v1/chat/completions"
     
     # Request settings
     nTimeout = 60
@@ -129,6 +132,11 @@ class AIClient
                             self.cDeepSeekAPIKey = getValue(oDeepSeek, "api_key", "")
                         ok
 
+                        oNvidia = getValue(oKeys, "nvidia", [])
+                        if type(oNvidia) = "LIST"
+                            self.cNvidiaAPIKey = getValue(oNvidia, "api_key", "")
+                        ok
+
                         self.cCurrentProvider = getValue(oKeys, "default_provider", "gemini")
                         # see "[DEBUG] Loaded Provider: " + self.cCurrentProvider + nl
                         self.nMaxTokens       = getValue(oKeys, "max_tokens", 4096)
@@ -161,6 +169,7 @@ class AIClient
     "claude": { "api_key": "' + self.cClaudeAPIKey + '" },
     "openrouter": { "api_key": "' + self.cOpenRouterAPIKey + '" },
     "deepseek": { "api_key": "' + self.cDeepSeekAPIKey + '" },
+    "nvidia": { "api_key": "' + self.cNvidiaAPIKey + '" },
     "default_provider": "' + self.cCurrentProvider + '",
     "max_tokens": ' + self.nMaxTokens + ',
     "temperature": ' + self.nTemperature + ',
@@ -181,7 +190,7 @@ class AIClient
     # Set API Provider
     # ===================================================================
     func setProvider(cProvider)
-        if cProvider = "gemini" or cProvider = "openai" or cProvider = "claude" or cProvider = "openrouter" or cProvider = "deepseek"
+        if cProvider = "gemini" or cProvider = "openai" or cProvider = "claude" or cProvider = "openrouter" or cProvider = "deepseek" or cProvider = "nvidia"
             cCurrentProvider = cProvider
             see "AI Provider set to: " + cProvider + nl
             return true
@@ -198,6 +207,7 @@ class AIClient
             on "claude" cClaudeModel = cModel
             on "openrouter" cOpenRouterModel = cModel
             on "deepseek" cDeepSeekModel = cModel
+            on "nvidia" cNvidiaModel = cModel
         off
         see "AI Model set to: " + cModel + nl
     
@@ -213,6 +223,7 @@ class AIClient
             on "claude" cKey = cClaudeAPIKey
             on "openrouter" cKey = cOpenRouterAPIKey
             on "deepseek" cKey = cDeepSeekAPIKey
+            on "nvidia" cKey = cNvidiaAPIKey
         off
         return (cKey != "" and not substr(lower(cKey), "your_") and len(cKey) > 10)
 
@@ -223,6 +234,7 @@ class AIClient
             on "claude" cClaudeAPIKey = cKey
             on "openrouter" cOpenRouterAPIKey = cKey
             on "deepseek" cDeepSeekAPIKey = cKey
+            on "nvidia" cNvidiaAPIKey = cKey
         off
         
         cConfigJSON = '{
@@ -231,6 +243,7 @@ class AIClient
     "claude": { "api_key": "' + self.cClaudeAPIKey + '" },
     "openrouter": { "api_key": "' + self.cOpenRouterAPIKey + '" },
     "deepseek": { "api_key": "' + self.cDeepSeekAPIKey + '" },
+    "nvidia": { "api_key": "' + self.cNvidiaAPIKey + '" },
     "default_provider": "' + self.cCurrentProvider + '",
     "max_tokens": ' + self.nMaxTokens + ',
     "temperature": ' + self.nTemperature + ',
@@ -262,6 +275,8 @@ class AIClient
                     return sendOpenRouterRequest(cMessage, cSystemPrompt, aContext, "")
                 on "deepseek"
                     return sendDeepSeekRequest(cMessage, cSystemPrompt, aContext, "")
+                on "nvidia"
+                    return sendNvidiaRequest(cMessage, cSystemPrompt, aContext, "")
                 other
                     oRes = createErrorResponse("Invalid AI provider: " + cCurrentProvider)
             off
@@ -570,8 +585,8 @@ class AIClient
                     cContent = getValue(oContextItem, "content", "")
                     
                     if cRole != ""
-                        aMsgDict = [ ["role", cRole] ]
-                        if cContent != "" Add(aMsgDict, ["content", cContent]) ok
+                        aMsgDict = [ ["role", cRole], ["content", "" + cContent] ]
+                        
                         
                         cToolCallID = getValue(oContextItem, "tool_call_id", "")
                         if cToolCallID != "" Add(aMsgDict, ["tool_call_id", cToolCallID]) ok
@@ -731,7 +746,7 @@ class AIClient
                     :prompt_tokens = nRespPromptTokens,
                     :candidates_tokens = nRespCandidatesTokens,
                     :total_tokens = nRespTotalTokens,
-                     :parts = [],
+                    :parts = [],
                     :all_parts = []
                 ]
             ok
@@ -1242,8 +1257,8 @@ class AIClient
                     cContent = getValue(oContextItem, "content", "")
                     
                     if cRole != ""
-                        aMsgDict = [ ["role", cRole] ]
-                        if cContent != "" Add(aMsgDict, ["content", cContent]) ok
+                        aMsgDict = [ ["role", cRole], ["content", "" + cContent] ]
+                        
                         
                         cToolCallID = getValue(oContextItem, "tool_call_id", "")
                         if cToolCallID != "" Add(aMsgDict, ["tool_call_id", cToolCallID]) ok
@@ -1307,6 +1322,101 @@ class AIClient
 
     func parseDeepSeekResponse(cResponse)
         return parseOpenRouterResponse(cResponse)
+
+    # ===================================================================
+    # Send Nvidia Request
+    # ===================================================================
+    func sendNvidiaRequest(cMessage, cSystemPrompt, aContext, cToolsJSON)
+        if self.cNvidiaAPIKey = "" or self.cNvidiaAPIKey = "YOUR_NVIDIA_API_KEY_HERE"
+            return createErrorResponse("Nvidia API key not configured")
+        ok
+        
+        # Build messages array
+        aMessages = []
+        if cSystemPrompt != ""
+            Add(aMessages, [ ["role", "system"], ["content", cSystemPrompt] ])
+        ok
+        
+        # Add context messages
+        if type(aContext) = "LIST" and len(aContext) > 0
+            for oContextItem in aContext
+                if type(oContextItem) = "LIST"
+                    cRole = getValue(oContextItem, "role", "")
+                    cContent = getValue(oContextItem, "content", "")
+                    
+                    if cRole != ""
+                        aMsgDict = [ ["role", cRole], ["content", "" + cContent] ]
+                        
+                        
+                        cToolCallID = getValue(oContextItem, "tool_call_id", "")
+                        if cToolCallID != "" Add(aMsgDict, ["tool_call_id", cToolCallID]) ok
+                        
+                        aToolCalls = getValue(oContextItem, "tool_calls", [])
+                        if type(aToolCalls) = "LIST" and len(aToolCalls) > 0 Add(aMsgDict, ["tool_calls", aToolCalls]) ok
+                        
+                        cName = getValue(oContextItem, "name", "")
+                        if cName != "" Add(aMsgDict, ["name", cName]) ok
+                        
+                        Add(aMessages, aMsgDict)
+                    ok
+                ok
+            next
+        ok
+        
+        # Add user message ONLY if provided AND not already the last message in context
+        if cMessage != ""
+            # Check if the last context message is already this user message (avoid duplication)
+            bAlreadyInContext = false
+            if len(aMessages) > 0
+                oLastMsg = aMessages[len(aMessages)]
+                if type(oLastMsg) = "LIST"
+                    cLastRole = getValue(oLastMsg, "role", "")
+                    cLastContent = getValue(oLastMsg, "content", "")
+                    if cLastRole = "user" and cLastContent = cMessage
+                        bAlreadyInContext = true
+                    ok
+                ok
+            ok
+            if not bAlreadyInContext
+                Add(aMessages, [ ["role", "user"], ["content", cMessage] ])
+            ok
+        ok
+        
+        # Build request JSON manually
+        cMessagesJSON = jsonEncodeRecursive(aMessages)
+        cModelJSON = '"' + self.cNvidiaModel + '"'
+        
+        cRequestJSON = '{' +
+            '"model":' + cModelJSON + ',' +
+            '"messages":' + cMessagesJSON + ',' +
+            '"temperature":' + self.nTemperature + ',' +
+            '"top_p":0.95,' +
+            '"max_tokens":' + self.nMaxTokens + ',' +
+            '"chat_template_kwargs":{"thinking":true,"reasoning_effort":"high"}'
+
+        # Add tools if provided
+        if cToolsJSON != "" and cToolsJSON != null and len(cToolsJSON) > 2
+            cRequestJSON += ',"tools":' + cToolsJSON
+            cRequestJSON += ',"tool_choice":"auto"'
+        ok
+
+        cRequestJSON += '}'
+        
+        # Send HTTP request
+        cResponse = sendHTTPRequest(self.cNvidiaEndpoint, cRequestJSON, "POST", [
+            "Content-Type: application/json",
+            "Authorization: Bearer " + self.cNvidiaAPIKey
+        ])
+        
+        return parseNvidiaResponse(cResponse)
+
+    func parseNvidiaResponse(cResponse)
+        oRes = parseOpenRouterResponse(cResponse)
+        if oRes[:success] = false
+            oRes[:error] = substr(oRes[:error], "OpenRouter", "Nvidia")
+            oRes[:message] = substr(oRes[:message], "OpenRouter", "Nvidia")
+        ok
+        return oRes
 
     # ===================================================================
     # Extract Thoughts from parts list

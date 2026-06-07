@@ -279,6 +279,9 @@ class SmartAgent
                     ok
                 ok
 
+                # Rebuild context array dynamically to include new user messages, tool calls, and results
+                oContextMap[:context_array] = self.oContextIntelligence.buildWeightedContext(cRequestType, cCurrentCode, 15000)
+
                 oAIResponse = dispatchToProvider(oContextMap, aConversation, cMessage)
                 
                 if not oAIResponse[:success]
@@ -580,6 +583,11 @@ class SmartAgent
             cToolsJSON = self.oAgentTools.getFilteredOpenAIJSON(aRelevant)
             return self.oAIClient.sendDeepSeekRequest(cMessage, oContextMap[:system_prompt], oContextMap[:context_array], cToolsJSON)
             
+        elseif self.oAIClient.cCurrentProvider = "nvidia"
+            # Send only the relevant subset to Nvidia
+            cToolsJSON = self.oAgentTools.getFilteredOpenAIJSON(aRelevant)
+            return self.oAIClient.sendNvidiaRequest(cMessage, oContextMap[:system_prompt], oContextMap[:context_array], cToolsJSON)
+            
         elseif self.oAIClient.cCurrentProvider = "gemini"
             # Send only the relevant subset to Gemini
             cToolsJSON = self.oAgentTools.getFilteredGeminiJSON(aRelevant)
@@ -731,7 +739,11 @@ class SmartAgent
             oToolResult = self.oAgentTools.executeTool(cToolName, aParams)
 
             if oTelemetry != null oTelemetry.recordToolExecution(cToolName, nToolStartClock, oToolResult[:success]) ok
-            if oLongTermMemory != null oLongTermMemory.learnFromToolResult(cToolName, aParams, oToolResult[:success], "" + oToolResult[:message]) ok
+            cLearnMsg = oToolResult[:message]
+            if not oToolResult[:success]
+                cLearnMsg = oToolResult[:error]
+            ok
+            if oLongTermMemory != null oLongTermMemory.learnFromToolResult(cToolName, aParams, oToolResult[:success], "" + cLearnMsg) ok
 
             if oToolResult[:success]
                 cResultText = "" + oToolResult[:message]
@@ -779,10 +791,31 @@ class SmartAgent
             cResultText = oToolResult[:error]
         ok
 
-        if isObject(self.oAIClient) and (self.oAIClient.cCurrentProvider = "openrouter" or self.oAIClient.cCurrentProvider = "deepseek")
+        if isObject(self.oAIClient)
+            if self.oAIClient.cCurrentProvider = "gemini"
+                # Construct tool_call_id and tool_calls for Gemini to enable persistent history
+                cToolCallID = "call_" + oAIResponse[:function_name] + "_" + clock()
+                oAIResponse[:tool_call_id] = cToolCallID
+                
+                cArgsJSON = list2json(oAIResponse[:function_args])
+                oFunctionObj = [
+                    ["name", oAIResponse[:function_name]],
+                    ["arguments", cArgsJSON]
+                ]
+                oToolCallObj = [
+                    ["id", cToolCallID],
+                    ["type", "function"],
+                    ["function", oFunctionObj]
+                ]
+                oAIResponse[:tool_calls] = [oToolCallObj]
+            ok
+
+            # Always add tool calls and results to persistent history for all providers
             self.oContextEngine.addToolCallToHistory(oAIResponse[:message], oAIResponse[:tool_calls])
             self.oContextEngine.addToolResultToHistory(oAIResponse[:tool_call_id], cResultText, oAIResponse[:function_name])
-        elseif isObject(self.oAIClient) and self.oAIClient.cCurrentProvider = "gemini"
+        ok
+
+        if isObject(self.oAIClient) and self.oAIClient.cCurrentProvider = "gemini"
             aModelParts = oAIResponse[:all_parts] 
             for pIdx = 1 to len(aModelParts)
                 if type(aModelParts[pIdx]) = "LIST"
