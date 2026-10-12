@@ -95,7 +95,7 @@ class SmartAgent
     # Process User Request
     # ===================================================================
     func processRequest(cUserMessage, cCurrentCode)
-        try
+        //try
             # Validate input
             if cUserMessage = "" or cUserMessage = null
                 return createErrorResponse("Empty message")
@@ -135,9 +135,9 @@ class SmartAgent
                 return sendToAI(cUserMessage, cRequestType, cCurrentCode)
             ok
 
-        catch
+       /* catch
             return createErrorResponse("Request processing failed: " + cCatchError)
-        done
+        done*/
 
     # ===================================================================
     # Advanced Request Type Analyzer (Context-Aware Intent Detection)
@@ -252,7 +252,7 @@ class SmartAgent
     # Send to AI — Refactored with Formal State Machine
     # ===================================================================
     func sendToAI(cMessage, cRequestType, cCurrentCode)
-        try
+       // try
             oContextMap = prepareContextMap(cMessage, cRequestType, cCurrentCode)
             aConversation = buildInitialConversation(oContextMap)
             
@@ -376,10 +376,10 @@ class SmartAgent
             ok
             return oFinal
 
-        catch
+       /* catch
             if oStateMachine != null oStateMachine.transition(AGENT_ERROR) ok
             return createErrorResponse("AI request execution error: " + cCatchError)
-        done
+        done*/
 
     # ===================================================================
     # Phase 4 Decomposed Helpers for sendToAI
@@ -495,13 +495,13 @@ class SmartAgent
         if len(aExploredDirs) > 0 or len(aReadFiles) > 0 or len(aModified) > 0
             cSessionKnowledge = "[SESSION KNOWLEDGE — you ALREADY explored/fetched this, REUSE it instead of re-listing or re-reading the same path]" + nl
             if len(aExploredDirs) > 0
-                cSessionKnowledge += "• Directories already listed/explored: " + list2str(aExploredDirs, ", ") + nl
+                cSessionKnowledge += "• Directories already listed/explored: " + list2str(aExploredDirs) + nl
             ok
             if len(aReadFiles) > 0
-                cSessionKnowledge += "• Files already read: " + list2str(aReadFiles, ", ") + nl
+                cSessionKnowledge += "• Files already read: " + list2str(aReadFiles) + nl
             ok
             if len(aModified) > 0
-                cSessionKnowledge += "• Files already modified: " + list2str(aModified, ", ") + nl
+                cSessionKnowledge += "• Files already modified: " + list2str(aModified) + nl
             ok
         ok
         if cSessionKnowledge != ""
@@ -779,13 +779,14 @@ class SmartAgent
         ok
 
     func executeToolSafely(oAIResponse, aToolsUsed)
-        cToolName = oAIResponse[:function_name]
+        cToolName = trim(oAIResponse[:function_name])
         oToolArgs = oAIResponse[:function_args]
 
         if substr(cToolName, ":")
             pos = substr(cToolName, ":")
             cToolName = substr(cToolName, pos + 1)
         ok
+        cToolName = lower(trim(cToolName))
 
         if find(aToolsUsed, cToolName) = 0
             aToolsUsed + cToolName
@@ -905,6 +906,24 @@ class SmartAgent
             
             oToolResult = self.oAgentTools.executeTool(cToolName, aParams)
 
+            # Defensive Check: ensure oToolResult is ALWAYS a valid List
+            if type(oToolResult) != "LIST"
+                if type(oToolResult) = "STRING" and oToolResult != ""
+                    oToolResult = createSuccessResult(oToolResult)
+                else
+                    oToolResult = createErrorResult("Tool execution returned non-list format: " + string(oToolResult))
+                ok
+            ok
+            if oToolResult[:success] = null
+                oToolResult[:success] = false
+            ok
+            if oToolResult[:message] = null
+                oToolResult[:message] = ""
+            ok
+            if oToolResult[:error] = null
+                oToolResult[:error] = ""
+            ok
+
             if oTelemetry != null oTelemetry.recordToolExecution(cToolName, nToolStartClock, oToolResult[:success]) ok
             cLearnMsg = oToolResult[:message]
             if not oToolResult[:success]
@@ -923,10 +942,12 @@ class SmartAgent
                 
                 if oToolResult[:added] != null and (oToolResult[:added] > 0 or oToolResult[:removed] > 0)
                     cFirstParamVal = ""
-                    if type(aParams[1]) = "LIST" and len(aParams[1]) >= 2
-                        cFirstParamVal = "" + aParams[1][2]
-                    else
-                        cFirstParamVal = "" + aParams[1]
+                    if len(aParams) >= 1
+                        if type(aParams[1]) = "LIST" and len(aParams[1]) >= 2
+                            cFirstParamVal = "" + aParams[1][2]
+                        else
+                            cFirstParamVal = "" + aParams[1]
+                        ok
                     ok
                     if oUIManager != null
                         oUIManager.displayToolStats(cFirstParamVal, oToolResult[:added], oToolResult[:removed])

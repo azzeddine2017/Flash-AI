@@ -432,6 +432,7 @@ class AgentTools
     # Execute Tool
     # ===================================================================
     func executeTool(cToolName, aParameters)
+        cToolName = lower(trim(cToolName))
         # Normalize parameters (Task Fix: handle both positional and associative)
         aParameters = normalizeParameters(cToolName, aParameters)
         
@@ -635,7 +636,11 @@ class AgentTools
                         else
                             # Fallback call if no definition (less robust)
                             try
-                                return eval("return " + cToolName + "(aParameters)")
+                                oDynResult = eval("return " + cToolName + "(aParameters)")
+                                if type(oDynResult) != "LIST"
+                                    return createSuccessResult("" + oDynResult)
+                                ok
+                                return oDynResult
                             catch
                                 return createErrorResult("Dynamic fallback error: " + cCatchError)
                             done
