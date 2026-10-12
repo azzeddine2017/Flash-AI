@@ -40,14 +40,14 @@ class ContextIntelligence
             nWeight = 0.6
         ok
 
-        # Tool results are medium priority (can often be re-fetched)
+        # Tool results are high priority so previous turn outputs aren't dropped
         if cType = "tool_result"
-            nWeight = 0.3
+            nWeight = 0.65
         ok
 
-        # Tool call records are low priority (just metadata)
+        # Tool call records are medium-high priority to keep tool call context intact
         if cType = "tool_call"
-            nWeight = 0.2
+            nWeight = 0.6
         ok
 
         # System notes are low priority
@@ -191,8 +191,10 @@ class ContextIntelligence
                 cName = getValueFromList(oMsg, "name", "")
                 if cName != "" oContextMsg + ["name", cName] ok
             ok
-            cCalls = getValueFromList(oMsg, "tool_calls", "")
-            if cCalls != ""  oContextMsg + ["tool_calls", cCalls]  ok
+            cCalls = getValueFromList(oMsg, "tool_calls", [])
+            if (type(cCalls) = "LIST" and len(cCalls) > 0) or (type(cCalls) = "STRING" and cCalls != "")
+                oContextMsg + ["tool_calls", cCalls]
+            ok
 
             aContext + oContextMsg
         next

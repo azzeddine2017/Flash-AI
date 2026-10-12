@@ -94,7 +94,7 @@ func jsonEncodeValue oVal
                 item = oVal[i]
                 cKey = item[1]
                 val  = item[2]
-                cJSON += '"' + cKey + '":' + jsonEncodeValue(val)
+                cJSON += '"' + jsonEscapeStr("" + cKey) + '":' + jsonEncodeValue(val)
                 if i < len(oVal)  cJSON += ","  ok
             next
             cJSON += "}"
@@ -118,27 +118,82 @@ func jsonEncodeValue oVal
 
 # Get value from a Ring associative list by key
 # Supports both [[key, val], ...] and flat [key1, val1, key2, val2] formats
+func safeString v
+    if type(v) = "STRING" return v ok
+    if type(v) = "NUMBER" return "" + v ok
+    return ""
+
 func getValueFromList aList, cKey, cDefault
     if type(aList) != "LIST" return cDefault ok
-    # Check against list of pairs (Ring associative list)
+    cKeyLower = lower(safeString(cKey))
+    if cKeyLower = "" return cDefault ok
+    
+    # 1. Exact match & Case-insensitive & Symbol (colon prefix) match in list of pairs [[key, val], ...]
     for oItem in aList
         if type(oItem) = "LIST" and len(oItem) >= 2
-            if type(oItem[1]) = "STRING"
-                if oItem[1] = cKey or (left(oItem[1], 1) = ":" and substr(oItem[1], 2) = cKey)
+            if type(oItem[1]) = "STRING" or type(oItem[1]) = "NUMBER"
+                cK = lower(safeString(oItem[1]))
+                if cK = cKeyLower or (left(cK, 1) = ":" and substr(cK, 2) = cKeyLower)
                     return oItem[2]
                 ok
-            elseif oItem[1] = cKey
-                return oItem[2]
             ok
         ok
     next
-    # Fallback for flat lists [key1, val1, key2, val2]
+    
+    # 2. Fallback for flat lists [key1, val1, key2, val2]
     for i = 1 to len(aList) step 2
-        if i < len(aList) and aList[i] = cKey
-            return aList[i+1]
+        if i < len(aList)
+            if type(aList[i]) = "STRING" or type(aList[i]) = "NUMBER"
+                if lower(safeString(aList[i])) = cKeyLower
+                    return aList[i+1]
+                ok
+            ok
         ok
     next
+
+    # 3. Alias match for tool parameters
+    aAliases = getSharedParamAliases(cKeyLower)
+    if len(aAliases) > 0
+        for cAlias in aAliases
+            for oItem in aList
+                if type(oItem) = "LIST" and len(oItem) >= 2
+                    if type(oItem[1]) = "STRING" or type(oItem[1]) = "NUMBER"
+                        cK = lower(safeString(oItem[1]))
+                        if cK = cAlias or (left(cK, 1) = ":" and substr(cK, 2) = cAlias)
+                            return oItem[2]
+                        ok
+                    ok
+                ok
+            next
+            for i = 1 to len(aList) step 2
+                if i < len(aList)
+                    if type(aList[i]) = "STRING" or type(aList[i]) = "NUMBER"
+                        if lower(safeString(aList[i])) = cAlias
+                            return aList[i+1]
+                        ok
+                    ok
+                ok
+            next
+        next
+    ok
     return cDefault
+
+func getSharedParamAliases cKey
+    cK = lower(cKey)
+    switch cK
+        on "filename" return ["file", "path", "filepath", "target_file", "name", "file_name"]
+        on "directory" return ["dir", "path", "folder", "directory_name"]
+        on "code" return ["script", "content", "ring_code", "source"]
+        on "pattern" return ["query", "search_term", "text", "regex"]
+        on "command" return ["cmd", "cli_command", "exec"]
+        on "target" return ["target_text", "old_text", "search", "find"]
+        on "replacement" return ["replacement_text", "new_text", "replace"]
+        on "content" return ["text", "code", "body", "data"]
+        on "url" return ["link", "uri", "website"]
+        on "project_name" return ["name", "project"]
+        on "search_term" return ["pattern", "query", "term", "text"]
+    off
+    return []
 
 # ===================================================================
 # Session ID Generation (longer, more unique)
@@ -198,12 +253,7 @@ func isPathSafeCheck cPath
     if substr(cPath, "config\") or substr(cPath, "api_keys.json") or substr(cPath, ".env")
         return false 
     ok
-    
-    # Protect core files from unauthorized access/scanning
-    /*aBlacklist = ["main.ring", "core_agent.ring", "smart_agent.ring", "agent_tools.ring", "ai_client.ring", "context_engine.ring"]
-    for cCore in aBlacklist
-        if substr(cPath, cCore) return false ok
-    next   */ 
+
 
     # If the path starts with the root, it's safe
     if left(cPath, len(cRoot)) != cRoot
@@ -334,55 +384,71 @@ func sanitizeShellArg cArg
 # Safe System Command Execution (With Timeout Protection)
 # ===================================================================
 
-# Execute a shell command with output captured to a temp file.
-# Prevents infinite blocking by using OS-level timeout (Unix) or
-# bounded output capture (Windows). Returns [success, output] list.
+# Execute a shell command with native ProcessManager (ringsubprocess) or fallback.
+# Captures stdout, stderr, and exit code directly without temp file overhead.
 func safeSystem cCommand, nTimeoutSec
     if type(nTimeoutSec) != "NUMBER" or nTimeoutSec <= 0
         nTimeoutSec = 30
     ok
     
+    # 1. High-Performance Execution via native ringsubprocess (ProcessManager)
+    if isclass("ProcessManager")
+        try
+            oProc = new ProcessManager
+            if oProc.runCommand(cCommand)
+                oProc.waitForComplete()
+                cStdout = oProc.readOutput()
+                cStderr = oProc.getStderr()
+                nExitCode = oProc.getExitCode()
+                
+                cCombined = cStdout
+                if trim(cStderr) != ""
+                    if trim(cCombined) != ""
+                        cCombined += nl + "[STDERR]:" + nl + cStderr
+                    else
+                        cCombined = cStderr
+                    ok
+                ok
+                
+                if nExitCode = 0
+                    return [true, cCombined]
+                else
+                    return [false, "Process failed with Exit Code (" + nExitCode + "):" + nl + cCombined]
+                ok
+            ok
+        catch
+            # Fall through to legacy fallback on exception
+        done
+    ok
+
+    # 2. Resilient Fallback using OS redirection
     cTempOut = APP_PATH("ai/logs/cmd_" + clock() + "_" + random(9999) + ".tmp")
-    
     try
         if iswindows()
-            # Windows: use direct system() for very short commands to reduce file Latency
-            # For longer ones, use cmd /c with redirect and powershell timeout wrapper
-            if len(cCommand) < 30 and not substr(cCommand, ">") 
-                # Direct execute for small safe commands
-                system(cCommand + ' > "' + cTempOut + '" 2>&1')
-            else
-                # Bounded execution using powershell
-                cPSCmd = 'powershell -NoProfile -Command "$p = Start-Process cmd -ArgumentList ' + "'/c " + '"""' + cCommand + ' > ' + cTempOut + ' 2>&1' + '"""' + "'" + ' -PassThru -NoNewWindow; if (!$p.WaitForExit(' + (nTimeoutSec * 1000) + ')) { $p.Kill(); [System.IO.File]::AppendAllText(' + "'" + cTempOut + "'" + ', \'TIMEOUT: Command exceeded ' + nTimeoutSec + 's limit\') }"'
-                system(cPSCmd)
-            ok
+            system(cCommand + ' > "' + cTempOut + '" 2>&1')
         else
-            # Unix: use timeout command for hard time limit
             cWrapped = "timeout " + nTimeoutSec + " sh -c '" + cCommand + "' > " + cTempOut + " 2>&1"
             system(cWrapped)
         ok
         
         cOutput = ""
-        # Small delay for OS to flush file buffer if needed
-        # sleep(0.1) 
         if fexists(cTempOut)
             cOutput = read(cTempOut)
             try remove(cTempOut) catch done
         ok
         
-        # Check for timeout marker
         if substr(cOutput, "TIMEOUT: Command exceeded")
             return [false, "Command timed out after " + nTimeoutSec + " seconds."]
         ok
         
         return [true, cOutput]
     catch
-        # Clean up temp file on error
         if fexists(cTempOut)
             try remove(cTempOut) catch done
         ok
         return [false, "Command failed: " + cCatchError]
     done
+
 
 # ===================================================================
 # Evolved Tool Code Validation (Sandbox Check)
@@ -523,3 +589,127 @@ func jsonEncodeRecursive(oVal)
     ok
     if oVal = NULL return "null" ok
     return "null"
+
+func hasKeywords cStr, aList
+    if type(cStr) != "STRING" return false ok
+    cLower = lower(trim(cStr))
+    for item in aList
+        if type(item) = "STRING" and substr(cLower, lower(item)) > 0
+            return true
+        ok
+    next
+    return false
+
+# ===================================================================
+# Flash Sovereign ReAct Parsers (<thought> & <tool_call>)
+# Enhanced by PCRE2 ringregex with robust substring fallback
+# ===================================================================
+
+func extractScratchpadThought cText
+    if type(cText) != "STRING" or cText = "" return "" ok
+    
+    # 1. Native PCRE2 extraction if ringregex is available
+    if isclass("RegEx")
+        try
+            oReg = new RegEx("(?is)<thought>(.*?)</thought>", 0)
+            aMatches = oReg.findAll(cText)
+            if len(aMatches) > 0 and len(aMatches[1]) >= 2
+                return trim(aMatches[1][2])
+            ok
+        catch
+        done
+    ok
+    
+    # 2. Resilient Substring fallback
+    nStart = substr(cText, "<thought>")
+    if nStart > 0
+        cSub = substr(cText, nStart + len("<thought>"))
+        nEnd = substr(cSub, "</thought>")
+        if nEnd > 0
+            return trim(left(cSub, nEnd - 1))
+        ok
+    ok
+    return ""
+
+
+func extractXmlToolCall cText
+    # Returns: [bFound, cToolName, oArgs, cRemainingText]
+    if type(cText) != "STRING" or cText = ""
+        return [false, "", [], cText]
+    ok
+    
+    cJsonPayload = ""
+    cRemText = cText
+    
+    # 1. Try PCRE2 matching for <tool_call>...</tool_call>
+    if isclass("RegEx")
+        try
+            oReg = new RegEx("(?is)<tool_call>\s*(.*?)\s*</tool_call>", 0)
+            aMatches = oReg.findAll(cText)
+            if len(aMatches) > 0 and len(aMatches[1]) >= 2
+                cJsonPayload = trim(aMatches[1][2])
+                cFullTag = aMatches[1][1]
+                cRemText = substr(cText, cFullTag, "")
+            ok
+        catch
+        done
+    ok
+    
+    # 2. Substring fallback for <tool_call>
+    if cJsonPayload = ""
+        nStart = substr(cText, "<tool_call>")
+        if nStart > 0
+            cSub = substr(cText, nStart + len("<tool_call>"))
+            nEnd = substr(cSub, "</tool_call>")
+            if nEnd > 0
+                cJsonPayload = trim(left(cSub, nEnd - 1))
+                cFullTag = "<tool_call>" + left(cSub, nEnd - 1) + "</tool_call>"
+                cRemText = substr(cText, cFullTag, "")
+            ok
+        ok
+    ok
+    
+    # 3. JSON block fallback (e.g. {"name": "...", "arguments": {...}})
+    if cJsonPayload = "" and substr(cText, '{"name"') > 0 and (substr(cText, '"arguments"') > 0 or substr(cText, '"parameters"') > 0)
+        nPos = substr(cText, '{"name"')
+        cRest = substr(cText, nPos)
+        nBraces = 0
+        nEndPos = 0
+        for i = 1 to len(cRest)
+            if cRest[i] = "{" nBraces++ ok
+            if cRest[i] = "}"
+                nBraces--
+                if nBraces = 0
+                    nEndPos = i
+                    exit
+                ok
+            ok
+        next
+        if nEndPos > 0
+            cJsonPayload = left(cRest, nEndPos)
+            cRemText = substr(cText, cJsonPayload, "")
+        ok
+    ok
+    
+    if cJsonPayload != ""
+        try
+            oParsed = json2list(cJsonPayload)
+            if type(oParsed) = "LIST"
+                cName = getValueFromList(oParsed, "name", "")
+                vArgs = getValueFromList(oParsed, "arguments", NULL)
+                if vArgs = NULL
+                    vArgs = getValueFromList(oParsed, "parameters", [])
+                ok
+                if type(vArgs) = "STRING" and vArgs != ""
+                    try vArgs = json2list(vArgs) catch done
+                ok
+                if cName != ""
+                    return [true, cName, vArgs, trim(cRemText)]
+                ok
+            ok
+        catch
+        done
+    ok
+    
+    return [false, "", [], cText]
+

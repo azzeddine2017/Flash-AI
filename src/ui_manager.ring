@@ -272,6 +272,29 @@ class UIManager
         resetColor()
     }
 
+    # ===================================================================
+    # Tool Output Display
+    # ===================================================================
+    func displayToolOutput cOutput {
+        if cOutput = null or cOutput = "" return ok
+        cOutTrim = trim("" + cOutput)
+        if len(cOutTrim) = 0 return ok
+        
+        setColor(DARKGREY)
+        aLines = split(cOutTrim, nl)
+        nMaxShow = min(20, len(aLines))
+        for i = 1 to nMaxShow
+            cLineStr = trim(aLines[i])
+            if cLineStr != ""
+                see "  │   └─ " + left(cLineStr, 85) + nl
+            ok
+        next
+        if len(aLines) > nMaxShow
+            see "  │   └─ ... [" + (len(aLines) - nMaxShow) + " more lines]" + nl
+        ok
+        resetColor()
+    }
+
 
     # ===================================================================
     # Line changes visualization

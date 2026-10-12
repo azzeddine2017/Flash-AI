@@ -19,12 +19,30 @@ class AgentTools
     # MCP Integration
     oMCPManager = new MCPClientManager
     
+    # Persistent Long-Term Memory (Markdown-backed)
+    oLongTermMemory = null
+
+    # Skills Manager (Markdown-based Progressive Disclosure)
+    oSkillsManager = null
+
     # ===================================================================
     # Constructor
     # ===================================================================
     func init()
         cWorkingDirectory = CurrentDir()
         registerTools()
+        if oLongTermMemory = null
+            try
+                oLongTermMemory = new LongTermMemory
+            catch
+            done
+        ok
+        if oSkillsManager = null
+            try
+                oSkillsManager = new SkillsManager
+            catch
+            done
+        ok
         see "AgentTools initialized with " + len(aAvailableTools) + " tools." + nl
     
     # ===================================================================
@@ -116,6 +134,54 @@ class AgentTools
             "Spawn a new sub-agent instance with an empty initial memory to perform a heavy sub-task and return the final report. Essential for splitting large coding goals.",
             [["task_instruction","The detailed plan and instructions for this sub-agent","string"]],
             "agent_delegation")
+
+        # Skills Management (Markdown-based Progressive Disclosure in skills/)
+        aAvailableTools + createToolFull("list_skills", 
+            "List all specialized Markdown skills available in the skills/ library with their purpose and scope",
+            [],
+            "skills_management")
+
+        aAvailableTools + createToolFull("activate_skill", 
+            "Activate and read the specialized Markdown instructions, rules, and workflows from a skill in skills/ (e.g. ring_code_master, ring_gui_development, code_refactoring)",
+            [["skill_name","Unique identifier of the skill to activate and read","string"]],
+            "skills_management")
+
+
+        aAvailableTools + createToolFull("save_skill", 
+            "Create a new skill or update an existing skill as a structured Markdown document in skills/<skill_name>/SKILL.md",
+            [["skill_name","Unique name for the skill (e.g. web_scraping, data_analysis)","string"],
+             ["description","Clear 1-2 sentence description explaining when and why the agent should activate this skill","string"],
+             ["markdown_content","The full Markdown text containing guidelines, rules, and examples","string"]],
+            "skills_management")
+
+        aAvailableTools + createToolFull("delete_skill", 
+            "Delete an obsolete or unwanted skill from the skills/ directory",
+            [["skill_name","Name of the skill to delete","string"]],
+            "skills_management")
+
+        # Long-Term Markdown-Backed Memory
+        aAvailableTools + createToolFull("remember_fact", 
+            "Permanently store a project fact, user preference, architecture rule, or code pattern into long-term memory (synced to MEMORY.md)",
+            [["category","Category: user_preference, project_fact, code_pattern, error_pattern, file_knowledge, or general","string"],
+             ["fact","The exact statement or insight to remember","string"],
+             ["importance","Importance score from 1 to 10 (default: 5)","number"]],
+            "memory_management")
+
+        aAvailableTools + createToolFull("recall_memory", 
+            "Search long-term memory for stored facts and guidelines matching query keywords",
+            [["query","Search terms or keywords","string"],
+             ["max_results","Maximum number of memories to return (default: 5)","number"]],
+            "memory_management")
+
+        aAvailableTools + createToolFull("view_memory", 
+            "View long-term knowledge base formatted in Markdown (optionally filter by category)",
+            [["category","Optional category to filter by (leave empty for entire knowledge base)","string"]],
+            "memory_management")
+
+        aAvailableTools + createToolFull("forget_fact", 
+            "Remove memories matching a keyword or phrase from persistent storage",
+            [["keyword","Keyword or phrase identifying memories to remove","string"]],
+            "memory_management")
         
         # Bootstrap Custom Tools
         loadCustomTools()
@@ -454,6 +520,41 @@ class AgentTools
                         getValueFromList(aParameters, "description", ""), 
                         getValueFromList(aParameters, "params_json", ""), 
                         getValueFromList(aParameters, "ring_code", ""))
+
+                # Skills Management (Markdown-based)
+                on "list_skills"
+                    return listSkills()
+                on "activate_skill" on "read_skill"
+                    return activateSkill(getValueFromList(aParameters, "skill_name", ""))
+                on "save_skill"
+                    return saveSkill(
+                        getValueFromList(aParameters, "skill_name", ""),
+                        getValueFromList(aParameters, "description", ""),
+                        getValueFromList(aParameters, "markdown_content", ""))
+                on "modify_skill"
+                    # Backward compatibility for modify_skill
+                    cName = getValueFromList(aParameters, "skill_name", "")
+                    cDesc = getValueFromList(aParameters, "description", "")
+                    cMD = getValueFromList(aParameters, "markdown_content", "")
+                    if cMD = "" cMD = getValueFromList(aParameters, "ring_code", "") ok
+                    return saveSkill(cName, cDesc, cMD)
+                on "delete_skill"
+                    return deleteSkill(getValueFromList(aParameters, "skill_name", ""))
+
+                # Memory Management
+                on "remember_fact"
+                    return rememberFact(
+                        getValueFromList(aParameters, "category", "general"),
+                        getValueFromList(aParameters, "fact", ""),
+                        getValueFromList(aParameters, "importance", 5))
+                on "recall_memory"
+                    return recallMemory(
+                        getValueFromList(aParameters, "query", ""),
+                        getValueFromList(aParameters, "max_results", 5))
+                on "view_memory"
+                    return viewMemory(getValueFromList(aParameters, "category", ""))
+                on "forget_fact"
+                    return forgetFact(getValueFromList(aParameters, "keyword", ""))
                 other
                     # DYNAMIC TOOL HANDLING (Task 1 & Task 3 Fix)
                     # For dynamic tools, we look up the definition to see what parameters to pass
@@ -480,20 +581,18 @@ class AgentTools
                     
                     if isfunction(cToolName)
                         if oToolDef != NULL
-                            # Build the call string with named parameters extracted from aParameters
-                            cCall = cToolName + "("
+                            # Build call using global argument passing to eliminate string escaping bugs
+                            $g_dyn_call_args = []
                             for i = 1 to len(oToolDef.parameters)
                                 cParamName = oToolDef.parameters[i]
                                 cVal = getValueFromList(aParameters, cParamName, "")
-                                
-                                # Escape and wrap in quotes for the eval(call)
-                                if type(cVal) = "NUMBER"
-                                    cCall += "" + cVal
-                                else
-                                    cCall += '"' + jsonEscape(cVal) + '"' 
-                                ok
-                                
-                                if i < len(oToolDef.parameters) cCall += "," ok
+                                $g_dyn_call_args + cVal
+                            next
+                            
+                            cCall = cToolName + "("
+                            for i = 1 to len($g_dyn_call_args)
+                                if i > 1 cCall += "," ok
+                                cCall += "$g_dyn_call_args[" + i + "]"
                             next
                             cCall += ")"
                             
@@ -654,18 +753,24 @@ class AgentTools
                 ok
             ok
             
+            # Save and Hot-Reload
+            cFilePath = APP_PATH("custom_tools/" + cToolName + ".ring")
+            write(cFilePath, cRingCode)
+            
+            # Isolated Compiler Verification via subprocess
+            aCheck = safeSystem("ring -c " + cFilePath, 10)
+            if aCheck[1] = false
+                try remove(cFilePath) catch done
+                return createErrorResult("Compiler syntax error in tool '" + cToolName + "':" + nl + aCheck[2] + nl + "Fix the code syntax and try evolving again.")
+            ok
+            
             # Register Tool
             oNewTool = createToolFull(cToolName, cDescription, aParams, "custom_tool")
             Add(aAvailableTools, oNewTool)
 
             # Ensure normalized triple-style params for metadata saving
             aTripleParams = oNewTool.paramDescriptions
-            
-            # Save and Hot-Reload
-            cFilePath = APP_PATH("custom_tools/" + cToolName + ".ring")
-            
-            write(cFilePath, cRingCode)
-            
+
             # Save Metadata for Bootstrap Loading
             oMetadata = [
                 ["name", cToolName],
@@ -674,21 +779,182 @@ class AgentTools
             ]
             write(APP_PATH("custom_tools/" + cToolName + ".json"), jsonEncodeValue(oMetadata))
             
-             # Try to evaluate but don't crash on redeclaration
+            # Try to evaluate into current runtime
             try
-                 eval(cRingCode)
+                eval(cRingCode)
             catch
-                 # If redefinition occurs, it's fine since we saved the file and registration handles it
-                 cError = lower(cCatchError)
-                 if not (substr(cError, "redefinition") or substr(cError, "already defined") or substr(cError, "redeclaration"))
-                     return createErrorResult("Evolution logic error: " + cCatchError)
-                 ok
+                cError = lower(cCatchError)
+                if not (substr(cError, "redefinition") or substr(cError, "already defined") or substr(cError, "redeclaration"))
+                    return createErrorResult("Evolution runtime loading error: " + cCatchError)
+                ok
             done
 
             return createSuccessResult("Tool '" + cToolName + "' successfully added to the agent's arsenal.")
         catch
             return createErrorResult("Evolution error: " + cCatchError)
         done
+
+    # ===================================================================
+    # Skills Management Implementation (Markdown-Based)
+    # ===================================================================
+    func listSkills()
+        if oSkillsManager = null
+            oSkillsManager = new SkillsManager
+        ok
+        aSkills = oSkillsManager.getSkills()
+        cOutput = "# FLASH AI - Skills Library (`skills/`)" + nl + nl
+        cOutput += "Total Available Skills: " + len(aSkills) + nl + nl
+        if len(aSkills) = 0
+            cOutput += "_No skills found in `skills/`. You can create one using `save_skill`._" + nl
+            return createSuccessResult(cOutput)
+        ok
+        for oS in aSkills
+            cName = getValueFromList(oS, "name", "")
+            cTitle = getValueFromList(oS, "title", cName)
+            cDesc = getValueFromList(oS, "description", "")
+            cPath = getValueFromList(oS, "path", "")
+            cOutput += "### " + cTitle + " (`" + cName + "`)" + nl
+            cOutput += "- **Description:** " + cDesc + nl
+            cOutput += "- **Location:** `" + cPath + "`" + nl + nl
+        next
+        cOutput += "> *To load instructions for any skill, call `activate_skill(skill_name)`.*"
+        return createSuccessResult(cOutput)
+
+    func activateSkill(cSkillName)
+        if oSkillsManager = null
+            oSkillsManager = new SkillsManager
+        ok
+        cSkillName = trim(cSkillName)
+        if cSkillName = ""
+            return createErrorResult("skill_name cannot be empty.")
+        ok
+        aRes = oSkillsManager.getSkill(cSkillName)
+        if aRes[1] = true
+            cOut = "[ACTIVATED SKILL: " + cSkillName + "]" + nl + nl +
+                   aRes[2] + nl + nl +
+                   "[END OF SKILL INSTRUCTIONS - Apply the above rules to your execution]"
+            return createSuccessResult(cOut)
+        else
+            return createErrorResult(aRes[2])
+        ok
+
+    func readSkill(cSkillName)
+        return activateSkill(cSkillName)
+
+    func saveSkill(cSkillName, cDescription, cMarkdownContent)
+        if oSkillsManager = null
+            oSkillsManager = new SkillsManager
+        ok
+        aRes = oSkillsManager.saveSkill(cSkillName, cDescription, cMarkdownContent)
+        if aRes[1] = true
+            return createSuccessResult(aRes[2])
+        else
+            return createErrorResult(aRes[2])
+        ok
+
+    func modifySkill(cSkillName, cDescription, cParamsJSON, cRingCode)
+        # Compatibility wrapper directing to saveSkill
+        cContent = cRingCode
+        if cContent = "" cContent = cParamsJSON ok
+        return saveSkill(cSkillName, cDescription, cContent)
+
+    func deleteSkill(cSkillName)
+        if oSkillsManager = null
+            oSkillsManager = new SkillsManager
+        ok
+        aRes = oSkillsManager.deleteSkill(cSkillName)
+        if aRes[1] = true
+            return createSuccessResult(aRes[2])
+        else
+            return createErrorResult(aRes[2])
+        ok
+
+    # ===================================================================
+    # Long-Term Memory Implementation (Markdown Backed)
+    # ===================================================================
+    func rememberFact(cCategory, cFact, nImportance)
+        if oLongTermMemory = null
+            oLongTermMemory = new LongTermMemory
+        ok
+        if type(nImportance) = "STRING"
+            nImportance = 0 + nImportance
+        ok
+        if nImportance = 0  nImportance = 5  ok
+        oLongTermMemory.remember(cCategory, cFact, nImportance)
+        oLongTermMemory.syncMarkdownFile()
+        return createSuccessResult("Fact recorded in long-term memory under [" + cCategory + "]: " + cFact)
+
+    func recallMemory(cQuery, nMaxResults)
+        if oLongTermMemory = null
+            oLongTermMemory = new LongTermMemory
+        ok
+        if type(nMaxResults) = "STRING"
+            nMaxResults = 0 + nMaxResults
+        ok
+        if nMaxResults <= 0  nMaxResults = 5  ok
+        aResults = oLongTermMemory.recall(cQuery, nMaxResults)
+        if len(aResults) = 0
+            return createSuccessResult("No memories found matching query: '" + cQuery + "'")
+        ok
+        cOut = "# Recalled Memories for '" + cQuery + "':" + nl + nl
+        for oMem in aResults
+            cCat = getValueFromList(oMem, "category", "general")
+            cFact = getValueFromList(oMem, "fact", "")
+            nImp = getValueFromList(oMem, "importance", 5)
+            cCreated = getValueFromList(oMem, "created", "")
+            cOut += "- **[" + cCat + "]** (Importance: " + nImp + "/10): " + cFact + " *(saved: " + cCreated + ")*" + nl
+        next
+        return createSuccessResult(cOut)
+
+    func viewMemory(cCategory)
+        if oLongTermMemory = null
+            oLongTermMemory = new LongTermMemory
+        ok
+        oLongTermMemory.syncMarkdownFile()
+        cCategory = trim(cCategory)
+        if cCategory = ""
+            cMDPath = APP_PATH("ai/memory/MEMORY.md")
+            if fexists(cMDPath)
+                return createSuccessResult(read(cMDPath))
+            ok
+            return createSuccessResult(oLongTermMemory.exportMarkdown())
+        ok
+
+        # Filter by category
+        aAll = oLongTermMemory.getAllMemories()
+        aFiltered = []
+        for oMem in aAll
+            if lower(getValueFromList(oMem, "category", "")) = lower(cCategory)
+                aFiltered + oMem
+            ok
+        next
+        if len(aFiltered) = 0
+            return createSuccessResult("No memories found in category: '" + cCategory + "'")
+        ok
+        cOut = "# Memories in category [" + cCategory + "]:" + nl + nl
+        for oMem in aFiltered
+            cFact = getValueFromList(oMem, "fact", "")
+            nImp = getValueFromList(oMem, "importance", 5)
+            cCreated = getValueFromList(oMem, "created", "")
+            cOut += "- **[" + nImp + "/10]** " + cFact + " *(recorded: " + cCreated + ")*" + nl
+        next
+        return createSuccessResult(cOut)
+
+    func forgetFact(cKeyword)
+        if oLongTermMemory = null
+            oLongTermMemory = new LongTermMemory
+        ok
+        cKeyword = trim(cKeyword)
+        if cKeyword = ""
+            return createErrorResult("Keyword cannot be empty.")
+        ok
+        nRemoved = oLongTermMemory.forget(cKeyword)
+        oLongTermMemory.syncMarkdownFile()
+        if nRemoved > 0
+            return createSuccessResult("Removed " + nRemoved + " memory entry/entries matching '" + cKeyword + "'.")
+        else
+            return createSuccessResult("No memories matched keyword '" + cKeyword + "'.")
+        ok
 
     # ===================================================================
     # Normalize Parameters (Handle Positional vs Associative)
@@ -768,7 +1034,7 @@ class AgentTools
             write(cAuditLog, cCurrentLog + nl + "[" + date() + " " + time() + "] DEPTH " + nDepth + " TASK: " + cTaskInstruction + nl)
             
             # Inject a system prompt note ensuring the sub-agent knows its role
-            cPrefix = "SYSTEM PROTOCOL: You are a SUB-AGENT (Depth: " + (nDepth+1) + "). Your mission is to execute the following specific sub-task in your own isolated memory layer. Output a comprehensive final report when done.\n\n[SUB-TASK INSTRUCTION]\n"
+            cPrefix = "SYSTEM PROTOCOL: You are a SUB-AGENT (Depth: " + (nDepth+1) + "). Your mission is to execute the following specific sub-task in your own isolated memory layer. Output a comprehensive final report when done." + nl + "[SUB-TASK INSTRUCTION]" + nl
             
             see "  [+] Spawning autonomous sub-agent (Depth " + (nDepth+1) + ") for delegated task..." + nl
             oResp = oSubAgent.processRequest(cPrefix + cTaskInstruction, "")
@@ -778,7 +1044,7 @@ class AgentTools
             if fexists(cAuditLog) cCurrentLog = read(cAuditLog) ok
             write(cAuditLog, cCurrentLog + "[" + date() + " " + time() + "] DEPTH " + nDepth + " COMPLETED." + nl)            
             if oResp[:success]
-                return createSuccessResult("SUB-AGENT REPORT:\n" + oResp[:message])
+                return createSuccessResult("SUB-AGENT REPORT:" + nl + oResp[:message])
             else
                 return createErrorResult("SUB-AGENT FAILED: " + oResp[:error])
             ok

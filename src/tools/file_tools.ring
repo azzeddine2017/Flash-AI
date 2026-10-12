@@ -85,7 +85,7 @@ func listFiles cDirectory
         ok
         aResult = safeSystem(cCommand, 30) # Increased timeout to 30s
         if aResult[1]
-            return createSuccessResult("Files in " + cDirectory + ":\n" + aResult[2])
+            return createSuccessResult("Files in " + cDirectory + ":" +nl +"" + aResult[2])
         else
             return createErrorResult("Failed to list files: " + aResult[2])
         ok

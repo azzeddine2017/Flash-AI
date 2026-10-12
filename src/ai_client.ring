@@ -24,12 +24,12 @@ class AIClient
     # AIClient initialized with provider: gemini
     cCurrentProvider = "gemini"  # Default provider
     
-    cGeminiModel = "gemini-3.1-flash-lite" # gemini-flash-lite-latest
+    cGeminiModel = "gemini-3.5-flash-lite" # gemini-flash-lite-latest
     cOpenAIModel = "gpt-4.1"
     cClaudeModel = "claude-3.5-sonnet"
-    cOpenRouterModel = "x-ai/grok-4.1-fast:free"
+    cOpenRouterModel = "google/gemma-4-26b-a4b-it"
     cDeepSeekModel = "deepseek-chat"
-    cNvidiaModel = "qwen/qwen3.5-397b-a17b"
+    cNvidiaModel = "z-ai/glm-5.2"
 
     # API Endpoints
     cGeminiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/"+cGeminiModel+":generateContent"
@@ -263,7 +263,7 @@ class AIClient
     # Send Chat Request
     # ===================================================================
     func sendChatRequest(cMessage, cSystemPrompt, aContext)
-        //try
+        try
             switch cCurrentProvider
                 on "gemini"
                     return sendGeminiRequest(cMessage, cSystemPrompt, aContext)
@@ -295,9 +295,9 @@ class AIClient
             ok
             return oRes
 
-        /*catch
+        catch
             return createErrorResponse("Error in AI request: " + cCatchError)
-        done*/
+        done
     
     # ===================================================================
     # Send Gemini Request (base version, no tools)
@@ -344,52 +344,7 @@ class AIClient
         return oRes
 
     # ===================================================================
-    # Send multi-turn conversation with tools
-    # cConvJSON = pre-built JSON array string (NOT a Ring list)
-    # cFuncDeclsJSON = JSON string of function declarations
-    # ===================================================================
-    /*func sendGeminiConversation(cConvJSON, cFuncDeclsJSON)
-        if self.cGeminiAPIKey = "" or self.cGeminiAPIKey = "YOUR_GEMINI_API_KEY_HERE"
-            return createSuccessResponse("I am in demo mode. Add your API key in config/api_keys.json")
-        ok
- 
-        cTempStr = self.nTemperature
-        cTokStr  = self.nMaxTokens
 
-        if cFuncDeclsJSON != "" and cFuncDeclsJSON != null and len(cFuncDeclsJSON) > 2
-            # Ensure contents is wrapped as array if not already
-            if left(trim(cConvJSON), 1) != "["
-                cConvJSON = "[" + cConvJSON + "]"
-            ok
-            cRequestJSON = '{"contents":' + cConvJSON + ',' +
-                           '"tools":[{"functionDeclarations":' + cFuncDeclsJSON + '}],' +
-                           '"generationConfig":{"temperature":' + cTempStr + ',"maxOutputTokens":' + cTokStr + '}}'
-        else
-            if left(trim(cConvJSON), 1) != "["
-                cConvJSON = "[" + cConvJSON + "]"
-            ok
-            cRequestJSON = '{"contents":' + cConvJSON + ',' +
-                           '"generationConfig":{"temperature":' + cTempStr + ',"maxOutputTokens":' + cTokStr + '}}'
-        ok
-
-        cURL = self.cGeminiEndpoint + "?key=" + self.cGeminiAPIKey
-        cResponse = sendHTTPRequest(cURL, cRequestJSON, "POST", ["Content-Type: application/json"])
-        oRes = parseGeminiResponseFull(cResponse)
-        # Retry logic for Rate Limits during long loops
-        if oRes[:success] = false and self.nMaxRetries > 0
-            if substr(lower(oRes[:error]), 'resource_exhausted') or substr(lower(oRes[:error]), '429') or substr(lower(oRes[:error]), 'quota')
-                nAttempt = 1
-                while nAttempt <= self.nMaxRetries
-                    retryWithBackoff(nAttempt)
-                    cResponse = sendHTTPRequest(cURL, cRequestJSON, 'POST', ['Content-Type: application/json'])
-                    oRes = parseGeminiResponseFull(cResponse)
-                    if oRes[:success]  exit  ok
-                    nAttempt++
-                end
-            ok
-        ok
-        return oRes
-    */
 
     # ===================================================================
     # Send multi-turn conversation with tools (Advanced Reliability Ver)
@@ -505,9 +460,9 @@ class AIClient
             
             # Send HTTP request
             cResponse = sendHTTPRequest(self.cOpenAIEndpoint, cRequestJSON, "POST", [
-                "Content-Type: application/json",
-                "Authorization: Bearer " + self.cOpenAIAPIKey
-            ])
+                            "Content-Type: application/json",
+                            "Authorization: Bearer " + self.cOpenAIAPIKey
+                        ])
             
             return parseOpenAIResponse(cResponse)
             
@@ -552,10 +507,10 @@ class AIClient
             
             # Send HTTP request
             cResponse = sendHTTPRequest(cClaudeEndpoint, cRequestJSON, "POST", [
-                "Content-Type: application/json",
-                "x-api-key: " + cClaudeAPIKey,
-                "anthropic-version: 2023-06-01"
-            ])
+                            "Content-Type: application/json",
+                            "x-api-key: " + cClaudeAPIKey,
+                            "anthropic-version: 2023-06-01"
+                        ])
             
             return parseClaudeResponse(cResponse)
             
@@ -642,11 +597,11 @@ class AIClient
         
         # Send HTTP request
         cResponse = sendHTTPRequest(self.cOpenRouterEndpoint, cRequestJSON, "POST", [
-            "Content-Type: application/json",
-            "Authorization: Bearer " + self.cOpenRouterAPIKey,
-            "HTTP-Referer: https://github.com/ring-lang/ring",
-            "X-Title: Flash AI Client (Ring)"
-        ])
+                    "Content-Type: application/json",
+                    "Authorization: Bearer " + self.cOpenRouterAPIKey,
+                    "HTTP-Referer: https://github.com/ring-lang/ring",
+                    "X-Title: Flash AI Client (Ring)"
+                ])
         
         return parseOpenRouterResponse(cResponse)
     
@@ -690,8 +645,11 @@ class AIClient
                 cContent = getValue(oMessage, "content", "")
                 if type(cContent) = "NULL" cContent = "" ok
                 
-                # Check for reasoning field (OpenRouter specific)
+                # Check for reasoning field (OpenRouter / Nvidia thinking models)
                 cReasoning = getValue(oMessage, "reasoning", "")
+                if type(cReasoning) = "NULL" or cReasoning = ""
+                    cReasoning = getValue(oMessage, "reasoning_content", "")
+                ok
                 if type(cReasoning) = "NULL" cReasoning = "" ok
                 
                 # --- NEW: Support Tool Calls (Function Calling) ---
@@ -729,6 +687,47 @@ class AIClient
                     ]
                 ok
 
+                # --- ReAct Extraction (when model returns tool call in XML or text) ---
+                cScratchpadThought = extractScratchpadThought(cContent)
+                if cScratchpadThought != "" and cReasoning = ""
+                    cReasoning = cScratchpadThought
+                ok
+
+                aXmlCall = extractXmlToolCall(cContent)
+                if aXmlCall[1] = true
+                    cFuncName = aXmlCall[2]
+                    oFuncArgs = aXmlCall[3]
+                    cCleanContent = aXmlCall[4]
+                    cToolCallID = "call_" + cFuncName + "_" + clock()
+                    
+                    cArgsJSON = list2json(oFuncArgs)
+                    aSyntheticCall = [
+                        ["id", cToolCallID],
+                        ["type", "function"],
+                        ["function", [
+                            ["name", cFuncName],
+                            ["arguments", cArgsJSON]
+                        ]]
+                    ]
+
+                    return [
+                        :success = true,
+                        :type = "function_call",
+                        :function_name = cFuncName,
+                        :function_args = oFuncArgs,
+                        :tool_call_id  = cToolCallID,
+                        :tool_calls    = [aSyntheticCall],
+                        :message = trim(cCleanContent),
+                        :thought = trim(cReasoning),
+                        :error = "",
+                        :prompt_tokens = nRespPromptTokens,
+                        :candidates_tokens = nRespCandidatesTokens,
+                        :total_tokens = nRespTotalTokens,
+                        :parts = [],
+                        :all_parts = []
+                    ]
+                ok
+
                 if nRespTotalTokens = 0 
                    nRespTotalTokens = estimateTokens(cContent) + estimateTokens(cReasoning) + 100 # Rough prompt overhead
                 ok
@@ -750,9 +749,13 @@ class AIClient
                     :all_parts = []
                 ]
             ok
+            # No choices found in response
+            return createErrorResponse("No response choices from OpenRouter API")
         catch
             return createErrorResponse("Failed to parse OpenRouter response: " + cCatchError)
         done
+        # Final fallback (should not reach here)
+        return createErrorResponse("Unexpected parse state in OpenRouter response")
     
     # ===================================================================
     # Build Contextual Prompt
@@ -1126,6 +1129,34 @@ class AIClient
             ]
         ok
 
+        # Check for Sovereign XML tool calls in text
+        if cTotalText != ""
+            cScratchpadThought = extractScratchpadThought(cTotalText)
+            if cScratchpadThought != "" and cTotalThought = ""
+                cTotalThought = cScratchpadThought
+            ok
+
+            aXmlCall = extractXmlToolCall(cTotalText)
+            if aXmlCall[1] = true
+                cFuncName = aXmlCall[2]
+                oFuncArgs = aXmlCall[3]
+                cTotalText = aXmlCall[4]
+                return [
+                    :success = true,
+                    :type = "function_call",
+                    :function_name = cFuncName,
+                    :function_args = oFuncArgs,
+                    :all_parts = aParts,
+                    :thought = trim(cTotalThought),
+                    :message = trim(cTotalText),
+                    :error = "",
+                    :prompt_tokens = nRespPromptTokens,
+                    :candidates_tokens = nRespCandidatesTokens,
+                    :total_tokens = nRespTotalTokens
+                ]
+            ok
+        ok
+
         if trim(cTotalText) != ""
             return [
                 :success = true,
@@ -1314,9 +1345,9 @@ class AIClient
         
         # Send HTTP request
         cResponse = sendHTTPRequest(self.cDeepSeekEndpoint, cRequestJSON, "POST", [
-            "Content-Type: application/json",
-            "Authorization: Bearer " + self.cDeepSeekAPIKey
-        ])
+                    "Content-Type: application/json",
+                    "Authorization: Bearer " + self.cDeepSeekAPIKey
+                ])
         
         return parseDeepSeekResponse(cResponse)
 
@@ -1391,8 +1422,7 @@ class AIClient
             '"messages":' + cMessagesJSON + ',' +
             '"temperature":' + self.nTemperature + ',' +
             '"top_p":0.95,' +
-            '"max_tokens":' + self.nMaxTokens + ',' +
-            '"chat_template_kwargs":{"thinking":true,"reasoning_effort":"high"}'
+            '"max_tokens":' + self.nMaxTokens
 
         # Add tools if provided
         if cToolsJSON != "" and cToolsJSON != null and len(cToolsJSON) > 2
@@ -1404,14 +1434,17 @@ class AIClient
         
         # Send HTTP request
         cResponse = sendHTTPRequest(self.cNvidiaEndpoint, cRequestJSON, "POST", [
-            "Content-Type: application/json",
-            "Authorization: Bearer " + self.cNvidiaAPIKey
-        ])
+                    "Content-Type: application/json",
+                    "Authorization: Bearer " + self.cNvidiaAPIKey
+                ])
         
         return parseNvidiaResponse(cResponse)
 
     func parseNvidiaResponse(cResponse)
         oRes = parseOpenRouterResponse(cResponse)
+        if type(oRes) != "LIST"
+            return createErrorResponse("Invalid Nvidia API response (non-list result)")
+        ok
         if oRes[:success] = false
             oRes[:error] = substr(oRes[:error], "OpenRouter", "Nvidia")
             oRes[:message] = substr(oRes[:message], "OpenRouter", "Nvidia")

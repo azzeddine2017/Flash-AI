@@ -143,14 +143,20 @@ class oApp
                         bRunning = false
                         return
                         
-                    on 8, 127  # Backspace
+                    on 8 
                         if nCursorPos > 0
                             cInput = "" + cInput
                             cInput = left(cInput, nCursorPos-1) + substr(cInput, nCursorPos+1)
                             nCursorPos--
                             bNeedsRedraw = true
                         ok
-                        
+                    on 127  # Backspace
+                        if nCursorPos > 0
+                            cInput = "" + cInput
+                            cInput = left(cInput, nCursorPos-1) + substr(cInput, nCursorPos+1)
+                            nCursorPos--
+                            bNeedsRedraw = true
+                        ok   
                     on 9  # TAB Key (Autocomplete)
                         if len(aTabMatches) = 0
                             cTabPrefix = cInput
@@ -328,6 +334,8 @@ class oApp
             ["/load "       , "Load a saved session"],
             ["/sessions"    , "List saved sessions"],
             ["/tools"       , "List available AI tools"],
+            ["/skills"      , "Manage agent skills & custom tools"],
+            ["/memory"      , "Inspect & manage Markdown-backed memory"],
             ["/mcp"         , "Manage MCP Servers"],
             ["/config"      , "Show current configuration"],
             ["/set "        , "Change a setting"],
@@ -415,7 +423,7 @@ class oApp
         if cPartial = "" return [] ok
 
         aSlashCmds = ["/model", "/provider", "/debug", "/tokens", "/history",
-                      "/save", "/load", "/sessions", "/tools", "/mcp", "/clear", 
+                      "/save", "/load", "/sessions", "/tools", "/skills", "/memory", "/mcp", "/clear", 
                       "/config", "/set", "/run", "/help", "/authorize", "/cmd", "/chatlog", "/multi", "/theme", "/lang", "/workspace",
                       "/plan", "/execute", "/auto"]
         
@@ -475,6 +483,12 @@ class oApp
                 return
             on "/tools"
                 showToolsList()
+                return
+            on "/skills"
+                handleSkillsCommand("")
+                return
+            on "/memory"
+                handleMemoryCommand("")
                 return
             on "/mcp"
                 manageMCPServers()
@@ -545,6 +559,16 @@ class oApp
         ok
 
         # --- Prefix-based / commands ---
+        if left(cLowerCmd, 8) = "/skills "
+            handleSkillsCommand(trim(substr(cCommand, 9)))
+            return
+        ok
+
+        if left(cLowerCmd, 8) = "/memory "
+            handleMemoryCommand(trim(substr(cCommand, 9)))
+            return
+        ok
+
         if left(cLowerCmd, 5) = "/mcp "
             aParts = split(cCommand, " ")
             if len(aParts) >= 3 and lower(trim(aParts[2])) = "connect"
@@ -595,9 +619,9 @@ class oApp
             if cFile != ""
                 oRes = readFile(cFile)
                 if oRes[:success]
-                    # We strip the "File content:\n" prefix if present from AgentTools.readFile
+                    # We strip the "File content:" +nl + prefix if present from AgentTools.readFile
                     cContent = oRes[:message]
-                    if left(cContent, 13) = "File content:"
+                    if left(cContent, 13) = "File content:"+nl
                         cContent = substr(cContent, substr(cContent, nl) + 1)
                     ok
                     oUIManager.displayFileContent(cFile, cContent)
@@ -851,6 +875,8 @@ class oApp
                 ? "    /load <session>    - Load a saved session"
                 ? "    /sessions          - List saved sessions"
                 ? "    /tools             - List available AI tools"
+                ? "    /skills            - Manage agent skills & custom tools"
+                ? "    /memory            - Inspect & manage Markdown-backed memory"
                 ? "    /mcp             - Manage MCP Servers"
                 ? "    /config            - Show current configuration"
                 ? "    /set <key> <val>   - Change a setting"
@@ -925,6 +951,163 @@ class oApp
             setColor(DARKGREY)
             ? " - " + oTool.description
         next
+        ? ""
+        resetColor()
+    }
+
+    # ===================================================================
+    # Handle /skills Command (List, Read, Delete, Reload)
+    # ===================================================================
+    func handleSkillsCommand cArgs {
+        cArgs = trim(cArgs)
+        cLowerArgs = lower(cArgs)
+
+        if cArgs = "" or cLowerArgs = "list"
+            oRes = oCoreAgent.oSmartAgent.oAgentTools.listSkills()
+            ? ""
+            setColor(CYAN)
+            ? oRes[:message]
+            resetColor()
+            return
+        ok
+
+        if left(cLowerArgs, 5) = "read "
+            cSkillName = trim(substr(cArgs, 6))
+            oRes = oCoreAgent.oSmartAgent.oAgentTools.readSkill(cSkillName)
+            ? ""
+            if oRes[:success]
+                setColor(WHITE)
+                ? oRes[:message]
+            else
+                oUIManager.showError(oRes[:error])
+            ok
+            resetColor()
+            return
+        ok
+
+        if left(cLowerArgs, 7) = "delete " or left(cLowerArgs, 4) = "del "
+            cSkillName = trim(substr(cArgs, substr(cArgs, " ") + 1))
+            oRes = oCoreAgent.oSmartAgent.oAgentTools.deleteSkill(cSkillName)
+            if oRes[:success]
+                oUIManager.showSuccess(oRes[:message])
+            else
+                oUIManager.showError(oRes[:error])
+            ok
+            return
+        ok
+
+        if left(cLowerArgs, 4) = "new "
+            cSkillName = trim(substr(cArgs, 5))
+            cTemplate = "# " + cSkillName + " Skill" + nl + nl +
+                        "## Purpose" + nl +
+                        "Guidelines and instructions for " + cSkillName + "." + nl + nl +
+                        "## Workflow & Best Practices" + nl +
+                        "1. Step 1..." + nl +
+                        "2. Step 2..." + nl
+            oRes = oCoreAgent.oSmartAgent.oAgentTools.saveSkill(cSkillName, "Custom user skill", cTemplate)
+            if oRes[:success]
+                oUIManager.showSuccess("New Markdown skill template created at skills/" + cSkillName + "/SKILL.md")
+            else
+                oUIManager.showError(oRes[:error])
+            ok
+            return
+        ok
+
+        if cLowerArgs = "reload"
+            if oCoreAgent.oSmartAgent.oSkillsManager != null
+                oCoreAgent.oSmartAgent.oSkillsManager.scanSkills()
+            ok
+            oUIManager.showSuccess("Skills library reloaded from skills/ directory.")
+            return
+        ok
+
+        ? ""
+        setColor(YELLOW)
+        ? "  Skills Command Usage (Markdown-backed skills in skills/):"
+        setColor(WHITE)
+        ? "    /skills              - List all available skills"
+        ? "    /skills read <name>  - View full Markdown guidelines of a skill"
+        ? "    /skills new <name>   - Create a new skill template in skills/<name>/SKILL.md"
+        ? "    /skills delete <name>- Delete a skill from skills/"
+        ? "    /skills reload       - Reload skills from disk"
+        ? ""
+        resetColor()
+    }
+
+    # ===================================================================
+    # Handle /memory Command (View, Recall, Forget, Sync, Clear)
+    # ===================================================================
+    func handleMemoryCommand cArgs {
+        cArgs = trim(cArgs)
+        cLowerArgs = lower(cArgs)
+
+        if cArgs = "" or cLowerArgs = "view"
+            oRes = oCoreAgent.oSmartAgent.oAgentTools.viewMemory("")
+            ? ""
+            if oRes[:success]
+                setColor(CYAN)
+                ? oRes[:message]
+            else
+                oUIManager.showError(oRes[:error])
+            ok
+            resetColor()
+            return
+        ok
+
+        if left(cLowerArgs, 7) = "recall "
+            cQuery = trim(substr(cArgs, 8))
+            oRes = oCoreAgent.oSmartAgent.oAgentTools.recallMemory(cQuery, 5)
+            ? ""
+            if oRes[:success]
+                setColor(WHITE)
+                ? oRes[:message]
+            else
+                oUIManager.showError(oRes[:error])
+            ok
+            resetColor()
+            return
+        ok
+
+        if left(cLowerArgs, 7) = "forget "
+            cKey = trim(substr(cArgs, 8))
+            oRes = oCoreAgent.oSmartAgent.oAgentTools.forgetFact(cKey)
+            if oRes[:success]
+                oUIManager.showSuccess(oRes[:message])
+            else
+                oUIManager.showError(oRes[:error])
+            ok
+            return
+        ok
+
+        if cLowerArgs = "sync"
+            if oCoreAgent.oSmartAgent.oLongTermMemory != null
+                oCoreAgent.oSmartAgent.oLongTermMemory.syncMarkdownFile()
+                oUIManager.showSuccess("Memory synced to ai/memory/MEMORY.md")
+            else
+                oUIManager.showError("Memory engine not initialized.")
+            ok
+            return
+        ok
+
+        if cLowerArgs = "clear"
+            if oCoreAgent.oSmartAgent.oLongTermMemory != null
+                oCoreAgent.oSmartAgent.oLongTermMemory.aMemories = []
+                oCoreAgent.oSmartAgent.oLongTermMemory.bDirty = true
+                oCoreAgent.oSmartAgent.oLongTermMemory.save()
+                oUIManager.showSuccess("Long-term memory cleared.")
+            ok
+            return
+        ok
+
+        ? ""
+        setColor(YELLOW)
+        ? "  Memory Command Usage:"
+        setColor(WHITE)
+        ? "    /memory              - View current long-term knowledge base (Markdown)"
+        ? "    /memory recall <q>   - Search knowledge base for query"
+        ? "    /memory forget <key> - Forget facts matching keyword"
+        ? "    /memory sync         - Export and sync to ai/memory/MEMORY.md"
+        ? "    /memory clear        - Clear all stored memories"
         ? ""
         resetColor()
     }

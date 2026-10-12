@@ -29,8 +29,8 @@ Version 3.0 represents a massive architectural leap, introducing a **Formal Fini
 
 ### ✨ Key Features
 - **⚙️ Deterministic FSM Architecture:** Replaced legacy loops with strict state machine verification (`AGENT_PLANNING`, `AGENT_EXEC_TOOL`, `AGENT_REFLECTING`).
-- **🧠 Context & Intelligence Layer:** Semantic scoring engine weights user errors and intents, guaranteeing deterministic context limits.
-- **🔄 Reflection Auto-Correction:** Failsafe auto-reflection loop analyzes execution errors and instructs the agent how to fix them dynamically.
+- **🧠 Context & Intelligence Layer:** Semantic scoring engine weights user errors and intents, guaranteeing deterministic context limits. The agent is **session-aware** — it recalls what it already explored (files, directories, tool results) and reuses it instead of re-fetching, and persists cross-session knowledge in a long-term memory store.
+- **🔄 Reflection Auto-Correction:** Failsafe auto-reflection loop analyzes execution errors, injects the corrected approach into the next cycle, and bounds retries so it never spins endlessly on a failing tool.
 - **📊 Cumulative Token Tracking:** Accurately sums tokens across all internal thought steps.
 - **🎨 Premium GUI Architecture:** Modern dark-mode interface with chat bubbles and reasoning blocks.
 - **🛠️ Domain-Modular Arsenal:** Tools properly isolated into file, code, project, and system sub-modules.
@@ -93,5 +93,5 @@ ring main.ring
 - [📝 Changelog](docs/CHANGELOG.md)
 
 ---
-**Developed by FLASH AI - Senior Systems Architect v2.5**
+**Developed by FLASH AI - Senior Systems Architect v3.0**
 *Empowering developers through sovereign autonomous intelligence.*

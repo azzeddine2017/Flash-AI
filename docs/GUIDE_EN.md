@@ -1,4 +1,4 @@
-# 🚀 FLASH AI v2.5 User Guide - The Sovereign Intelligence
+# 🚀 FLASH AI v3.0 User Guide - The Sovereign Intelligence
 
 ![FLASH AI Banner](images/banner.png)
 
@@ -53,11 +53,9 @@ ring main.ring
 
 ## 🛡️ Permissions & Security
 
-By default, FLASH AI runs in **Read-Only** mode to protect your files from unintended changes.
-- **To Grant Full Permissions (Authorize):**
-    - **GUI:** Toggle the **"Full Permissions"** checkbox in the sidebar.
-    - **CLI:** Type `/authorize` during the chat.
-- Without this authorization, FLASH AI can only read/analyze your code but cannot write, modify, or delete files.
+**FLASH AI is read-biased, not locked read-only.** Exploration tools (`list_files`, `read_file`, `grep_search`, `analyze_project`, `git_status`, running Ring code) work without extra prompts. **Modification tools** (`write_file`, `replace_file_content`, `delete_file`, `execute_command`, `git_commit`, `evolve_new_tool`) require explicit confirmation the first time they are used in a session (or the `/authorize` flag / "Full Permissions" GUI checkbox to grant session-wide approval). This protects your files while keeping the agent useful. If the Security Layer blocks a core file, it will ask you to type `/authorize`.
+
+> In `/plan` mode the agent is strictly READ-ONLY and will stop before any writing tool. In `/auto` mode it plans and executes iteratively.
 
 ---
 
@@ -73,5 +71,5 @@ By default, FLASH AI runs in **Read-Only** mode to protect your files from unint
 - **Dynamic File Analysis:** Ask FLASH AI to "analyze file.ring", and it will autonomously search for it, read it, and provide a deep summary.
 
 ---
-**Developed by FLASH AI - Senior Systems Architect v2.5**
+**Developed by FLASH AI - Senior Systems Architect v3.0**
 *Empowering developers through sovereign autonomous intelligence.*

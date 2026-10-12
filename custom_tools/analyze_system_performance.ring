@@ -4,4 +4,3 @@ func analyze_system_performance(process_id)
     command = "tasklist /FI " + char(34) + "PID eq " + process_id + char(34) + " /FO CSV /NH"
     output = systemcmd(command)
     return "Performance analysis results for process " + process_id + ": " + output
-ok

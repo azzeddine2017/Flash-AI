@@ -12,7 +12,7 @@
 class ReflectionEngine
 
     # Configuration
-    nMaxRetries = 2
+    nMaxRetries = 6
 
     # Known error patterns → diagnosis + suggested action
     aErrorPatterns = []
@@ -75,14 +75,16 @@ class ReflectionEngine
     # Analyze a tool failure and produce a diagnosis
     # ===================================================================
     func analyzeFailure cToolName, cError, aParams
-        cErrorLower = lower("" + cError)
+        cErrStr = ""
+        if type(cError) = "STRING" cErrStr = cError elseif type(cError) = "NUMBER" cErrStr = "" + cError ok
+        cErrorLower = lower(cErrStr)
 
         oAnalysis = [
             ["original_tool", cToolName],
             ["error", cError],
-            ["diagnosis", "Unknown error — no matching pattern found."],
-            ["suggested_action", "Report the exact error to the LLM for analysis."],
-            ["should_retry", false],
+            ["diagnosis", "Execution feedback received."],
+            ["suggested_action", "Analyze the compiler/system output and adjust your parameters or code."],
+            ["should_retry", true],
             ["is_repeat", false]
         ]
 
@@ -102,19 +104,21 @@ class ReflectionEngine
             ok
         next
 
-        # Check if this is a repeat failure (same tool + similar error)
+        # Check for genuine repeated identical failures (3+ times)
+        nIdenticalCount = 0
         for oFail in aRecentFailures
             cPrevTool = getValueFromList(oFail, "tool", "")
             cPrevErr = lower(getValueFromList(oFail, "error", ""))
-            if cPrevTool = cToolName and substr(cPrevErr, left(cErrorLower, 30))
-                # Same tool, similar error — this is a repeat
-                oAnalysis = setListValue(oAnalysis, "is_repeat", true)
-                oAnalysis = setListValue(oAnalysis, "should_retry", false)
-                oAnalysis = setListValue(oAnalysis, "diagnosis", 
-                    getValueFromList(oAnalysis, "diagnosis", "") + " [REPEAT FAILURE — do NOT retry the same approach]")
-                exit
+            if cPrevTool = cToolName and left(cPrevErr, 40) = left(cErrorLower, 40)
+                nIdenticalCount++
             ok
         next
+
+        if nIdenticalCount >= 3
+            oAnalysis = setListValue(oAnalysis, "is_repeat", true)
+            oAnalysis = setListValue(oAnalysis, "diagnosis", 
+                getValueFromList(oAnalysis, "diagnosis", "") + " [REPEATED FAILURE: 3 identical errors. Try an alternative strategy.]")
+        ok
 
         # Track this failure
         trackFailure(cToolName, cError)

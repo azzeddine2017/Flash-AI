@@ -319,7 +319,7 @@ class FlashGUI
         # You could also append a status message to the UI if needed
         # oHistory.append("<div style='color:#8b949e; font-size:10pt; text-align:center;'>MCP Auto-connect complete.</div>")
 
-    func displayToolActionInternal cToolName, cDetails
+    func displayToolActionInternal(cToolName, cDetails)
         cHtml = "<div style='background-color:#161b22; border: 1px solid #30363d; border-radius:8px; padding:10px; margin:5px 20px; border-left: 4px solid #d19a66;'>" + 
                "<span style='color:#d19a66; font-family:monospace; font-weight:bold;'>◆ TOOL_CALL: " + upper(cToolName) + "</span>" +
                "<div style='color: #8b949e; font-size:10pt; font-family:Consolas; margin-top:4px;'>" + cDetails + "</div></div>"
@@ -687,11 +687,11 @@ class FlashGUI
             refreshMCPList()
         ok
 
-class GUIManager
-    func displayAIMessage cMsg
+class GUIManager{
+    func displayAIMessage (cMsg){
         if isGlobal("oFlashGUI") oFlashGUI.displayAIMessageInternal(cMsg) ok
-
-    func showThinkingContent cThought
+    }
+    func showThinkingContent (cThought){
         if isGlobal("oFlashGUI")
             cThoughtHtml = "<div style='height:10px;'></div>" +
                            "<div style='background-color:#0d1117; border: 1px dashed #30363d; border-radius:12px; padding:15px; margin:10px 50px; color:#c9d1d9; font-style:italic; font-size:10.5pt; shadow: inset 0 0 10px rgba(0,0,0,0.5);'>" +
@@ -699,21 +699,27 @@ class GUIManager
                            renderMarkdown(cThought) + "</div>"
             oFlashGUI.oHistory.append(cThoughtHtml)
         ok
-    func displayToolAction cToolName, cDetails
+    }
+
+    func displayToolAction (cToolName, cDetails){
         if isGlobal("oFlashGUI")
             oFlashGUI.displayToolActionInternal(cToolName, cDetails)
         ok
+    }
 
-    func displaySystemNote(cNote)
+    func displaySystemNote(cNote){
         if isGlobal("oFlashGUI")
             cHtml = "<div style='color:#cca700; font-family:monospace; margin:5px 20px; font-weight:bold;'>[SYSTEM NOTE] " + cNote + "</div>"
             oFlashGUI.oHistory.append(cHtml)
             oFlashGUI.oHistory.verticalScrollBar().setValue(oFlashGUI.oHistory.verticalScrollBar().maximum())
             oFlashGUI.oApp.processEvents()
         ok
+    }
 
-    func setToolsCount n
-    func setLanguage cLang
-    func processEvents
-    func askConfirmation cToolName, cDetails
+    func setToolsCount (n){
+    }
+    func setLanguage (cLang)
+    func processEvents()
+    func askConfirmation (cToolName, cDetails)
         return true
+}

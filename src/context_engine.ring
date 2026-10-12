@@ -187,99 +187,7 @@ class ContextEngine
             del(aFileContext, 1)
         ok
     
-    # ===================================================================
-    # Build Context for AI Request
-    # ===================================================================
-    /*func buildContext(cRequestType, cCurrentCode)
-        aContext = []
-        
-        # 1. Weight-Based Sliding Window for History
-        nMaxBudget = 15000
-        nTotalChars = 0
-        aTempHistory = []
-        
-        # Loop backwards to find most recent messages within budget
-        for i = len(aConversationHistory) to 1 step -1
-            oItem = aConversationHistory[i]
-            cContent = getValueFromList(oItem, "content", "")
-            
-            if (nTotalChars + len(cContent)) <= nMaxBudget
-                aTempHistory + oItem
-                nTotalChars += len(cContent)
-            else
-                exit
-            ok
-        next
-        
-        # Restore chronological order
-        for i = len(aTempHistory) to 1 step -1
-            oItem = aTempHistory[i]
-            cRole    = getValueFromList(oItem, "role", "user")
-            cContent = getValueFromList(oItem, "content", "")
-            
-            oMsg = [ ["role", cRole], ["content", cContent] ]
-            
-            # Preserve Tool Call Metadata
-            cID    = getValueFromList(oItem, "tool_call_id", "")
-            if cID != ""  oMsg + ["tool_call_id", cID]  ok
-            
-            cCalls = getValueFromList(oItem, "tool_calls", "")
-            if cCalls != ""  oMsg + ["tool_calls", cCalls]  ok
 
-            aContext + oMsg
-        next
-        
-        # Add project context if available
-        if len(aProjectContext) > 0
-            oProject = aProjectContext[1]
-            cProjectInfo = "Current Project: " + oProject["name"] + nl +
-                          "Description: " + oProject["description"] + nl +
-                          "Files: " + list2str(oProject["files"])
-            
-            aContext + [
-                ["role", "system"],
-                ["content", cProjectInfo]
-            ]
-        ok
-        
-        # Add current code context
-        if cCurrentCode != ""
-            aContext + [
-                ["role", "system"], 
-                ["content", "Current Code:\n" + cCurrentCode]
-            ]
-        ok
-        
-        # Add recent file operations for file-related requests
-        if cRequestType = "file_operation" and len(aFileContext) > 0
-            cFileOps = "Recent File Operations:\n"
-            for i = len(aFileContext) to max(1, len(aFileContext)-5) step -1
-                oFileOp = aFileContext[i]
-                cFileOps += oFileOp["operation"] + ": " + oFileOp["filename"] + 
-                           " -> " + oFileOp["result"] + nl
-            next
-            
-            aContext + [
-                ["role", "system"],
-                ["content", cFileOps]
-            ]
-        ok
-
-        # 2. Dynamic State Injection (Task 2.1)
-        cOSName = "Unix"
-        if isWindows()  cOSName = "Windows"  ok
-        
-        cSystemState = "[CURRENT SYSTEM STATE]" + nl +
-                      "Directory: " + currentdir() + nl +
-                      "OS: " + cOSName + nl +
-                      "Date: " + date() + nl + 
-                      "Time: " + time()
-        
-        # Hidden system state block (injected at the end of context)
-        aContext + [["role", "system"], ["content", cSystemState]]
-        
-        return aContext
-*/
     # ===================================================================
     # Aggressive Context Pruning (The Token Saver)
     # ===================================================================
@@ -297,18 +205,17 @@ class ContextEngine
                 loop # Don't delete the plan!
             ok
             
-            # The main goals of pruning are large tool results
+            # The main goals of pruning are large tool results (truncate long content without destroying actual details)
             if cType = "tool_result" or cType = "code_context"
                 cContent = getValueFromList(oItem, "content", "")
                 
-                if len(cContent) > 300
-                    # Convert the large result to a very small "technical summary"
-                    cSummary = "[OLD TOOL RESULT: Executed successfully. Content abridged to save memory. (Original size: " + len(cContent) + " chars)]"
+                if len(cContent) > 2000
+                    cTruncated = truncateLongText(cContent, 2000)
                     
                     # Update the content in the array
                     for j = 1 to len(oItem)
                         if oItem[j][1] = "content" 
-                            oItem[j][2] = cSummary 
+                            oItem[j][2] = cTruncated 
                             exit 
                         ok
                     next
@@ -317,10 +224,10 @@ class ContextEngine
             
             # Pruning the agent's old thoughts
             if cType = "ai_response"
-                # If the response is old, we delete the large Thought and keep only the final response
+                # If the response is old, keep a compact thought summary instead of stripping entirely
                 for j = 1 to len(oItem)
-                    if oItem[j][1] = "thought" and len("" + oItem[j][2]) > 100
-                        oItem[j][2] = "[Previous reasoning pruned]"
+                    if oItem[j][1] = "thought" and len("" + oItem[j][2]) > 300
+                        oItem[j][2] = left("" + oItem[j][2], 300) + "... [Thought truncated]"
                         exit
                     ok
                 next
@@ -418,7 +325,7 @@ class ContextEngine
         
         # Add current code context
         if cCurrentCode != ""
-            aContext + [["role", "system"], ["content", "Current Code:\n" + cCurrentCode]]
+            aContext + [["role", "system"], ["content", "Current Code:" + nl + cCurrentCode]]
         ok
         
         # Dynamic State Injection
@@ -485,7 +392,7 @@ Your mission is to provide surgical, high-level technical solutions.
 
 MISSION PROTOCOLS:
 1. LATENT PLANNING (Deep Thought): Before using any tool, perform an Internal Monologue. Analyze the ripple effects of your proposed changes on the entire system.
-2. DISCOVERY-FIRST: Never guess. Use list_files and grep_search extensively to understand the codebase context before proposing edits.
+2. DISCOVERY-FIRST (but SESSION-AWARE): Never guess. Before calling list_files or grep_search, check whether you already have the directory contents or file content from a recent tool result in THIS session, or from the injected [LONG-TERM MEMORY] block. If you already know the file/directory layout, REUSE it and go straight to reading the specific files needed — do NOT re-list what you have already explored. Repeatedly re-listing the same path is a failure of memory, not diligence.
 3. SURGICAL MODIFICATION: Prefer replace_file_content over writing entire files. Match indentation EXACTLY.
 4. ERROR RESILIENCE: If a tool execution fails, do not apologize. Analyze the error message and immediately attempt a corrected technical approach.
 5. QUALITY ASSURANCE: After making changes, verify them. Check file existence, run Ring code if applicable, and ensure no syntax regressions.

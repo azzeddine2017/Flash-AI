@@ -24,6 +24,7 @@ class SmartAgent
     oSecurityLayer = null
     oTelemetry = null
     oLongTermMemory = null
+    oSkillsManager = null
     oContextIntelligence = null
     oReflectionEngine = null
     oStateMachine = null
@@ -67,6 +68,10 @@ class SmartAgent
         oSecurityLayer = new SecurityLayer()
         oTelemetry = new Telemetry()
         oLongTermMemory = new LongTermMemory()
+        oAgentTools.oLongTermMemory = oLongTermMemory
+        
+        oSkillsManager = new SkillsManager()
+        oAgentTools.oSkillsManager = oSkillsManager
         
         # Initialize Phase 3 Intelligence Subsystems
         oContextIntelligence = new ContextIntelligence(oContextEngine)
@@ -90,7 +95,7 @@ class SmartAgent
     # Process User Request
     # ===================================================================
     func processRequest(cUserMessage, cCurrentCode)
-        //try
+        try
             # Validate input
             if cUserMessage = "" or cUserMessage = null
                 return createErrorResponse("Empty message")
@@ -130,9 +135,9 @@ class SmartAgent
                 return sendToAI(cUserMessage, cRequestType, cCurrentCode)
             ok
 
-        /*catch
+        catch
             return createErrorResponse("Request processing failed: " + cCatchError)
-        done*/
+        done
 
     # ===================================================================
     # Advanced Request Type Analyzer (Context-Aware Intent Detection)
@@ -247,7 +252,7 @@ class SmartAgent
     # Send to AI — Refactored with Formal State Machine
     # ===================================================================
     func sendToAI(cMessage, cRequestType, cCurrentCode)
-        //try
+        try
             oContextMap = prepareContextMap(cMessage, cRequestType, cCurrentCode)
             aConversation = buildInitialConversation(oContextMap)
             
@@ -255,6 +260,7 @@ class SmartAgent
             nIteration = 0
             aToolsUsed = []
             nRequestTokens = 0  # Per-request token counter (reset each request)
+            nConsecFails = 0    # Consecutive tool failures (bounded by ReflectionEngine.nMaxRetries)
             
             if oStateMachine != null oStateMachine.transition(AGENT_CALLING_LLM) ok
 
@@ -281,6 +287,9 @@ class SmartAgent
 
                 # Rebuild context array dynamically to include new user messages, tool calls, and results
                 oContextMap[:context_array] = self.oContextIntelligence.buildWeightedContext(cRequestType, cCurrentCode, 15000)
+                if nIteration = 1
+                    aConversation = buildInitialConversation(oContextMap)
+                ok
 
                 oAIResponse = dispatchToProvider(oContextMap, aConversation, cMessage)
                 
@@ -335,8 +344,20 @@ class SmartAgent
                     
                     if not oToolResult[:success]
                         if oStateMachine != null oStateMachine.transition(AGENT_REFLECTING) ok
+                        nConsecFails++
+                        # Resilient self-healing loop: allow the agent sufficient turns
+                        # to inspect compiler output, adjust code, and verify fixes.
+                        nMaxFails = 6
+                        if oReflectionEngine != null nMaxFails = oReflectionEngine.nMaxRetries ok
+                        if nConsecFails > nMaxFails
+                            if oUIManager != null oUIManager.displaySystemNote("Stopping after " + nConsecFails + " consecutive tool failures. Review the error and adjust your approach.") ok
+                            oFinalRes = finalizeAgentResponse(oAIResponse, aToolsUsed, oContextMap, nIteration, nRequestTokens)
+                            oFinalRes[:message] = oToolResult[:error] + nl + nl + "[ FLASH_AI ] Aborted after repeated tool failures. Please review the diagnosis above and try a different approach."
+                            return oFinalRes
+                        ok
                     else
                         if oStateMachine != null oStateMachine.transition(AGENT_CALLING_LLM) ok
+                        nConsecFails = 0
                     ok
                     
                     aConversation = appendToolResultToConversation(aConversation, oAIResponse, oToolResult)
@@ -355,10 +376,10 @@ class SmartAgent
             ok
             return oFinal
 
-        /*catch
+        catch
             if oStateMachine != null oStateMachine.transition(AGENT_ERROR) ok
             return createErrorResponse("AI request execution error: " + cCatchError)
-        done*/
+        done
 
     # ===================================================================
     # Phase 4 Decomposed Helpers for sendToAI
@@ -404,9 +425,98 @@ class SmartAgent
 
         cMemoryContext = ""
         if oLongTermMemory != null
-            cMemoryContext = oLongTermMemory.buildContextInjection(cMessage, 500)
+            # Build a richer recall context: combine the current message with a
+            # short summary of the recent conversation so cross-turn memory is
+            # actually surfaced to the model (previously only cMessage was used).
+            cRecallQuery = cMessage
+            aRecent = self.oContextEngine.aConversationHistory
+            nRecentStart = max(1, len(aRecent) - 6)
+            for i = nRecentStart to len(aRecent)
+                cRecallQuery = cRecallQuery + " " + getValueFromList(aRecent[i], "content", "")
+            next
+            cMemoryContext = oLongTermMemory.buildContextInjection(cRecallQuery, 1200)
         ok
-        
+
+        # Session-Aware Context: tell the model what it already explored THIS
+        # session so it stops re-listing / re-reading the same paths (the core
+        # "doesn't remember between turns / re-uses tools" complaint).
+        # Built primarily from aConversationHistory tool results (authoritative),
+        # with aFileContext/aCodeContext as a secondary index.
+        cSessionKnowledge = ""
+        aExploredDirs = []
+        aReadFiles = []
+        aModified = []
+        aHist = self.oContextEngine.aConversationHistory
+        for i = max(1, len(aHist) - 20) to len(aHist)
+            oMsg = aHist[i]
+            if getValueFromList(oMsg, "type", "") = "tool_result"
+                cContent = getValueFromList(oMsg, "content", "")
+                if substr(cContent, "Files in ")
+                    # Extract the directory from "Files in X:"
+                    nPos = substr(cContent, "Files in ")
+                    cRest = substr(cContent, nPos + len("Files in "))
+                    cDir = split(cRest, ":")[1]
+                    cDir = trim(split(cDir, nl)[1])
+                    if cDir != "" and find(aExploredDirs, cDir) = 0 aExploredDirs + cDir ok
+                ok
+                if substr(cContent, "File content:") or substr(cContent, "File content:")
+                    # Find the read_file call that produced this in the prior turn
+                    if i > 1
+                        oPrev = aHist[i - 1]
+                        if getValueFromList(oPrev, "type", "") = "tool_call"
+                            cPrev = getValueFromList(oPrev, "content", "")
+                            nPos = substr(cPrev, "READ_FILE")  # may be uppercase in display
+                            if nPos = 0 nPos = substr(lower(cPrev), "read_file") ok
+                            if nPos > 0
+                                cRest = substr(cPrev, nPos)
+                                cFn = trim(split(cRest, nl)[1])
+                                # strip "READ_FILE  → filename: " prefix
+                                nFn = substr(cFn, "filename:")
+                                if nFn > 0 cFn = trim(substr(cFn, nFn + len("filename:"))) ok
+                                if cFn != "" and find(aReadFiles, cFn) = 0 aReadFiles + cFn ok
+                            ok
+                        ok
+                    ok
+                ok
+            ok
+        next
+        # Also fold in the file/code context index (catches execute_command etc.)
+        for oFC in self.oContextEngine.aFileContext
+            cFn = getValueFromList(oFC, "filename", "")
+            cOp = getValueFromList(oFC, "operation", "")
+            if cFn != "" and cOp = "explored" and find(aExploredDirs, cFn) = 0 aExploredDirs + cFn ok
+            if cFn != "" and cOp = "modified" and find(aModified, cFn) = 0 aModified + cFn ok
+        next
+        for oCC in self.oContextEngine.aCodeContext
+            cFn = getValueFromList(oCC, "filename", "")
+            if cFn != "" and find(aReadFiles, cFn) = 0 aReadFiles + cFn ok
+        next
+
+        if len(aExploredDirs) > 0 or len(aReadFiles) > 0 or len(aModified) > 0
+            cSessionKnowledge = "[SESSION KNOWLEDGE — you ALREADY explored/fetched this, REUSE it instead of re-listing or re-reading the same path]" + nl
+            if len(aExploredDirs) > 0
+                cSessionKnowledge += "• Directories already listed/explored: " + list2str(aExploredDirs, ", ") + nl
+            ok
+            if len(aReadFiles) > 0
+                cSessionKnowledge += "• Files already read: " + list2str(aReadFiles, ", ") + nl
+            ok
+            if len(aModified) > 0
+                cSessionKnowledge += "• Files already modified: " + list2str(aModified, ", ") + nl
+            ok
+        ok
+        if cSessionKnowledge != ""
+            cSystemPrompt = cSystemPrompt + nl + nl + cSessionKnowledge
+        ok
+
+        # Inject Skills Catalog (Markdown-based Progressive Disclosure)
+        cSkillsCatalog = ""
+        if oSkillsManager != null
+            cSkillsCatalog = oSkillsManager.getSkillsCatalogPrompt()
+        ok
+        if cSkillsCatalog != ""
+            cSystemPrompt = cSystemPrompt + nl + nl + cSkillsCatalog
+        ok
+
         cFullPrompt = buildContextualPrompt(cMessage, cSystemPrompt, aContext)
         if cMemoryContext != ""
             cFullPrompt = cMemoryContext + nl + cFullPrompt
@@ -415,14 +525,7 @@ class SmartAgent
         nLoopStartClock = 0
         if oTelemetry != null nLoopStartClock = oTelemetry.startAPITimer() ok
 
-       /* cGoalInjection = ""
-        if self.cActiveGoal != ""
-            cGoalInjection = " [ CURRENT TASK: " + self.cActiveGoal + " ] " + nl
-        ok
-        
-        # Target injection in the System Prompt
-        cSystemPrompt = cGoalInjection + self.oContextEngine.getSystemPrompt(cRequestType)
-        */
+
         cActiveTask = self.oTaskTracker.getNextTask()
         cRoadmapNote = ""
         
@@ -435,11 +538,13 @@ class SmartAgent
                         "---" + nl
         ok
 
-        # Combining observation with System Prompt
-        cSystemPrompt = cRoadmapNote + self.oContextEngine.getSystemPrompt(cRequestType)
+        if cRoadmapNote != ""
+            cSystemPrompt = cRoadmapNote + cSystemPrompt
+        ok
         
 
         return [
+            :request_type = cRequestType,
             :full_prompt = cFullPrompt,
             :system_prompt = cSystemPrompt,
             :loop_start = nLoopStartClock,
@@ -464,21 +569,24 @@ class SmartAgent
         
         # Add past context array
         aContext = oContextMap[:context_array]
-        
-        # FIX: Remove the last 'user' message from context to avoid duplication,
-        # because the current user message will be added explicitly below.
-        if type(aContext) = "LIST" and len(aContext) > 0
-            oLastCtx = aContext[len(aContext)]
-            if type(oLastCtx) = "LIST"
-                cLastRole = self.oAIClient.getValue(oLastCtx, "role", "")
-                if cLastRole = "user"
-                    del(aContext, len(aContext))
+        nEndLimit = 0
+        if type(aContext) = "LIST"
+            nEndLimit = len(aContext)
+            if nEndLimit > 0
+                oLastCtx = aContext[nEndLimit]
+                if type(oLastCtx) = "LIST"
+                    cLastRole = self.oAIClient.getValue(oLastCtx, "role", "")
+                    cLastContent = self.oAIClient.getValue(oLastCtx, "content", "")
+                    if cLastRole = "user" and (cLastContent = oContextMap[:user_message] or oContextMap[:user_message] = "")
+                        nEndLimit--
+                    ok
                 ok
             ok
         ok
         
-        if type(aContext) = "LIST"
-            for oItem in aContext
+        if type(aContext) = "LIST" and nEndLimit > 0
+            for i = 1 to nEndLimit
+                oItem = aContext[i]
                 if type(oItem) != "LIST" loop ok
                 cRole = self.oAIClient.getValue(oItem, "role", "user")
                 cContent = self.oAIClient.getValue(oItem, "content", "")
@@ -488,7 +596,7 @@ class SmartAgent
                 if cRole = "tool"
                     cName = self.oAIClient.getValue(oItem, "name", cToolCallID)
                     aFuncRes = [
-                        ["role", "function"],
+                        ["role", "user"],
                         ["parts", [
                             [["functionResponse", [
                                 ["name", cName],
@@ -507,9 +615,13 @@ class SmartAgent
                         if type(aCall) = "LIST"
                             oFunc = self.oAIClient.getValue(aCall, "function", [])
                             cName = self.oAIClient.getValue(oFunc, "name", "")
-                            cArgs = self.oAIClient.getValue(oFunc, "arguments", "{}")
+                            vArgs = self.oAIClient.getValue(oFunc, "arguments", "{}")
                             oParsedArgs = []
-                            try oParsedArgs = json2list(cArgs) catch done
+                            if type(vArgs) = "LIST"
+                                oParsedArgs = vArgs
+                            elseif type(vArgs) = "STRING" and vArgs != ""
+                                try oParsedArgs = json2list(vArgs) catch done
+                            ok
                             if type(oParsedArgs) = "LIST" and len(oParsedArgs) = 0
                                 oParsedArgs = [ [":_is_object", true] ]
                             ok
@@ -528,9 +640,38 @@ class SmartAgent
             next
         ok
         
-        # Add the current user message (explicitly, after deduplication)
-        cUsrMsg = cLangHint + nl + oContextMap[:user_message]
-        Add(aConversation, [ ["role", "user"], ["parts", [ [["text", cUsrMsg]] ] ] ])
+        # Add the current user message ONLY IF the conversation does not end with a function turn
+        # AND it wasn't already added as the last user turn.
+        bLastIsFunction = false
+        if len(aConversation) > 0
+            oLastTurn = aConversation[len(aConversation)]
+            if type(oLastTurn) = "LIST" and len(oLastTurn) >= 1
+                cLastTurnRole = oLastTurn[1][2]
+                if cLastTurnRole = "function" or cLastTurnRole = "tool"
+                    bLastIsFunction = true
+                ok
+            ok
+        ok
+
+        if not bLastIsFunction and oContextMap[:user_message] != ""
+            bAlreadyInConversation = false
+            if len(aConversation) > 0
+                oLastTurn = aConversation[len(aConversation)]
+                if type(oLastTurn) = "LIST" and len(oLastTurn) >= 2 and oLastTurn[1][2] = "user"
+                    aParts = oLastTurn[2][2]
+                    if type(aParts) = "LIST" and len(aParts) > 0
+                        cTxt = self.oAIClient.getValue(aParts[1], "text", "")
+                        if substr(cTxt, oContextMap[:user_message]) > 0
+                            bAlreadyInConversation = true
+                        ok
+                    ok
+                ok
+            ok
+            if not bAlreadyInConversation
+                cUsrMsg = cLangHint + nl + oContextMap[:user_message]
+                Add(aConversation, [ ["role", "user"], ["parts", [ [["text", cUsrMsg]] ] ] ])
+            ok
+        ok
         
         # ============================================================
         # CRITICAL: Enforce strict role alternation for Gemini API
@@ -747,6 +888,11 @@ class SmartAgent
 
             if oToolResult[:success]
                 cResultText = "" + oToolResult[:message]
+                if oUIManager != null
+                    oUIManager.displayToolOutput(cResultText)
+                else
+                    see "  │   └─ " + left(cResultText, 100) + nl
+                ok
                 cResultText = self.oContextEngine.truncateLongText(cResultText, 4000)
                 
                 if oToolResult[:added] != null and (oToolResult[:added] > 0 or oToolResult[:removed] > 0)
@@ -770,12 +916,19 @@ class SmartAgent
                 ok
                 if oReflectionEngine != null
                     oDiagnosis = oReflectionEngine.analyzeFailure(cToolName, cResultText, aParams)
+                    cRecovery = oReflectionEngine.buildRecoveryPrompt(oDiagnosis)
                     if oReflectionEngine.shouldRetry(oDiagnosis)
-                        cResultText = oReflectionEngine.buildRecoveryPrompt(oDiagnosis)
-                        if oUIManager != null 
+                        if oUIManager != null
                             cSysNote = "Self-Correction Triggered: " + getValueFromList(oDiagnosis, "diagnosis", "")
-                            oUIManager.displaySystemNote(cSysNote) 
+                            oUIManager.displaySystemNote(cSysNote)
                         ok
+                        # IMPORTANT: propagate the recovery guidance so the model
+                        # actually sees the corrected approach on the next loop turn.
+                        cResultText = cResultText + nl + nl + cRecovery
+                    else
+                        # Even when a retry is not recommended (e.g. repeat failure),
+                        # surface the diagnosis so the model stops blindly retrying.
+                        cResultText = cResultText + nl + nl + cRecovery
                     ok
                 ok
                 return [:success = false, :error = cResultText, :message = ""]
@@ -813,45 +966,98 @@ class SmartAgent
             # Always add tool calls and results to persistent history for all providers
             self.oContextEngine.addToolCallToHistory(oAIResponse[:message], oAIResponse[:tool_calls])
             self.oContextEngine.addToolResultToHistory(oAIResponse[:tool_call_id], cResultText, oAIResponse[:function_name])
-        ok
 
-        if isObject(self.oAIClient) and self.oAIClient.cCurrentProvider = "gemini"
-            aModelParts = oAIResponse[:all_parts] 
-            for pIdx = 1 to len(aModelParts)
-                if type(aModelParts[pIdx]) = "LIST"
-                    for kIdx = 1 to len(aModelParts[pIdx])
-                        if type(aModelParts[pIdx][kIdx]) = "LIST" and len(aModelParts[pIdx][kIdx]) >= 2
-                            if aModelParts[pIdx][kIdx][1] = "functionCall"
-                                for mIdx = 1 to len(aModelParts[pIdx][kIdx][2])
-                                    if type(aModelParts[pIdx][kIdx][2][mIdx]) = "LIST" and len(aModelParts[pIdx][kIdx][2][mIdx]) >= 2
-                                        if aModelParts[pIdx][kIdx][2][mIdx][1] = "args"
-                                            oTmpArgs = aModelParts[pIdx][kIdx][2][mIdx][2]
-                                            if type(oTmpArgs) = "LIST" and len(oTmpArgs) = 0
-                                                aModelParts[pIdx][kIdx][2][mIdx][2] = [ [":_is_object", true] ]
-                                            ok
-                                        ok
-                                    ok
-                                next
-                            ok
+            # --- Session memory wiring (fixes "doesn't remember / re-uses tools") ---
+            # Populate file/code context so prepareContextMap's SESSION KNOWLEDGE
+            # block is actually populated and the model stops re-listing paths.
+            cToolNameLC = lower(oAIResponse[:function_name])
+            if substr(cToolNameLC, "list_files") or substr(cToolNameLC, "analyze_project") or substr(cToolNameLC, "search") or substr(cToolNameLC, "grep")
+                cPath = extractFirstPathArg(oAIResponse)
+                if cPath = "" cPath = "." ok
+                self.oContextEngine.addFileContext("explored", cPath, cResultText)
+            elseif substr(cToolNameLC, "read") or substr(cToolNameLC, "read_file")
+                cTarget = self.oAIClient.getValue(oAIResponse, "function_args", "")
+                if type(cTarget) = "STRING" and cTarget != "" cTarget = json2list(cTarget) ok
+                if type(cTarget) = "LIST"
+                    for p in cTarget
+                        if type(p) = "LIST" and len(p) >= 2 and lower("" + p[1]) = "filename"
+                            self.oContextEngine.addCodeContext("" + p[2], cResultText, "ring")
+                            exit
                         ok
                     next
                 ok
-            next
-            Add(aConversation, [ ["role", "model"], ["parts", aModelParts] ])
+            elseif substr(cToolNameLC, "write") or substr(cToolNameLC, "replace") or substr(cToolNameLC, "delete")
+                cTarget = self.oAIClient.getValue(oAIResponse, "function_args", "")
+                if type(cTarget) = "STRING" and cTarget != "" cTarget = json2list(cTarget) ok
+                if type(cTarget) = "LIST"
+                    for p in cTarget
+                        if type(p) = "LIST" and len(p) >= 2 and (lower("" + p[1]) = "filename" or lower("" + p[1]) = "cfilename")
+                            self.oContextEngine.addFileContext("modified", "" + p[2], cResultText)
+                            exit
+                        ok
+                    next
+                ok
+            ok
+        ok
 
-            aFuncTurn = [
-                ["role", "function"],
-                ["parts", [
-                    [["functionResponse", [
-                        ["name", oAIResponse[:function_name]], 
-                        ["response", [
-                            ["name", oAIResponse[:function_name]],
-                            ["content", cResultText]
-                        ]]
-                    ]]]
-                ]]
-            ]
-            Add(aConversation, aFuncTurn)
+        if isObject(self.oAIClient)
+            if self.oAIClient.cCurrentProvider = "gemini"
+                aModelParts = oAIResponse[:all_parts] 
+                for pIdx = 1 to len(aModelParts)
+                    if type(aModelParts[pIdx]) = "LIST"
+                        for kIdx = 1 to len(aModelParts[pIdx])
+                            if type(aModelParts[pIdx][kIdx]) = "LIST" and len(aModelParts[pIdx][kIdx]) >= 2
+                                if aModelParts[pIdx][kIdx][1] = "functionCall"
+                                    for mIdx = 1 to len(aModelParts[pIdx][kIdx][2])
+                                        if type(aModelParts[pIdx][kIdx][2][mIdx]) = "LIST" and len(aModelParts[pIdx][kIdx][2][mIdx]) >= 2
+                                            if aModelParts[pIdx][kIdx][2][mIdx][1] = "args"
+                                                oTmpArgs = aModelParts[pIdx][kIdx][2][mIdx][2]
+                                                if type(oTmpArgs) = "LIST" and len(oTmpArgs) = 0
+                                                    aModelParts[pIdx][kIdx][2][mIdx][2] = [ [":_is_object", true] ]
+                                                ok
+                                            ok
+                                        ok
+                                    next
+                                ok
+                            ok
+                        next
+                    ok
+                next
+                Add(aConversation, [ ["role", "model"], ["parts", aModelParts] ])
+
+                aFuncTurn = [
+                    ["role", "user"],
+                    ["parts", [
+                        [["functionResponse", [
+                            ["name", oAIResponse[:function_name]], 
+                            ["response", [
+                                ["name", oAIResponse[:function_name]],
+                                ["content", cResultText]
+                            ]]
+                        ]]]
+                    ]]
+                ]
+                Add(aConversation, aFuncTurn)
+            else
+                # Multi-turn conversation tracking for OpenRouter / OpenAI compatible providers
+                cCallID = oAIResponse[:tool_call_id]
+                if cCallID = "" cCallID = "call_" + oAIResponse[:function_name] + "_" + clock() ok
+                
+                aAssistantTurn = [
+                    ["role", "assistant"],
+                    ["content", oAIResponse[:message]],
+                    ["tool_calls", oAIResponse[:tool_calls]]
+                ]
+                Add(aConversation, aAssistantTurn)
+                
+                aToolTurn = [
+                    ["role", "tool"],
+                    ["tool_call_id", cCallID],
+                    ["name", oAIResponse[:function_name]],
+                    ["content", cResultText]
+                ]
+                Add(aConversation, aToolTurn)
+            ok
         ok
         return aConversation
 
@@ -875,8 +1081,8 @@ class SmartAgent
         ok
 
         # 2. Roadmap Detection (Sequential Indicators)
-        if (substr(cFinalResponse, "1.") and substr(cFinalResponse, "2.")) or
-           (substr(cFinalResponse, "خارطة الطريق") and substr(cFinalResponse, "1-"))
+        if (substr(cFinalResponse, "Action Plan") or substr(cFinalResponse, "Roadmap") or substr(cFinalResponse, "خارطة الطريق") or substr(cFinalResponse, "خطوات العمل")) and
+           (substr(cFinalResponse, "1.") and substr(cFinalResponse, "2."))
             self.oTaskTracker.setRoadmap(cFinalResponse) 
             if self.oLogger != NULL 
                 self.oLogger.info("  [SYSTEM] Roadmap captured and pinned to TaskTracker.") 
@@ -965,19 +1171,79 @@ class SmartAgent
         next
         return aPositional
 
+    # Extract the first plausible path/directory argument from a tool response,
+    # regardless of whether function_args is a list-of-pairs or a JSON string.
+    func extractFirstPathArg(oAIResponse)
+        vArgs = self.oAIClient.getValue(oAIResponse, "function_args", "")
+        if type(vArgs) = "STRING" and vArgs != ""
+            try
+                vArgs = json2list(vArgs)
+            catch
+                vArgs = []
+            done
+        ok
+        if type(vArgs) != "LIST" return "" ok
+        # Walk every value; return the first one that looks like a path/name
+        for oItem in vArgs
+            cVal = ""
+            if type(oItem) = "LIST" and len(oItem) >= 2
+                cVal = "" + oItem[2]
+            elseif type(oItem) = "STRING"
+                cVal = oItem
+            ok
+            cVal = trim(cVal)
+            if cVal != "" and (substr(cVal, "/") or substr(cVal, "\") or substr(cVal, ".") or substr(lower(cVal), ".ring"))
+                return cVal
+            ok
+        next
+        return ""
+
     # ===================================================================
     # Get a value from args by key name
     # ===================================================================
     func getArgValue(oArgs, cKey)
         if type(oArgs) != "LIST" return "" ok
+        # 1. Exact match (case-insensitive)
         for oItem in oArgs
             if type(oItem) = "LIST" and len(oItem) >= 2
-                if oItem[1] = cKey
-                    return oItem[2]
+                if type(oItem[1]) = "STRING" or type(oItem[1]) = "NUMBER"
+                    if lower("" + oItem[1]) = lower("" + cKey)
+                        return oItem[2]
+                    ok
                 ok
             ok
         next
+        # 2. Alias match
+        aAliases = getParamAliases(cKey)
+        for cAlias in aAliases
+            for oItem in oArgs
+                if type(oItem) = "LIST" and len(oItem) >= 2
+                    if type(oItem[1]) = "STRING" or type(oItem[1]) = "NUMBER"
+                        if lower("" + oItem[1]) = lower("" + cAlias)
+                            return oItem[2]
+                        ok
+                    ok
+                ok
+            next
+        next
         return ""
+
+    func getParamAliases(cKey)
+        cK = lower(cKey)
+        switch cK
+            on "filename" return ["file", "path", "filepath", "target_file", "name"]
+            on "directory" return ["dir", "path", "folder", "directory_name"]
+            on "code" return ["script", "content", "ring_code", "source"]
+            on "pattern" return ["query", "search_term", "text", "regex"]
+            on "command" return ["cmd", "cli_command", "exec"]
+            on "target" return ["target_text", "old_text", "search", "find"]
+            on "replacement" return ["replacement_text", "new_text", "replace"]
+            on "content" return ["text", "code", "body", "data"]
+            on "url" return ["link", "uri", "website"]
+            on "project_name" return ["name", "project"]
+            on "search_term" return ["pattern", "query", "term", "text"]
+        off
+        return []
 
     # getValue helper
     func getValue(aList, cKey, cDefault)

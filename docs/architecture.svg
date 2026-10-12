@@ -1,0 +1,186 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 750" width="100%" height="100%">
+    <defs>
+        <!-- Background Gradients -->
+        <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#0d1117" />
+            <stop offset="100%" stop-color="#161b22" />
+        </linearGradient>
+        
+        <!-- Box Gradients -->
+        <linearGradient id="primaryBox" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#1f6feb" />
+            <stop offset="100%" stop-color="#388bfd" />
+        </linearGradient>
+        <linearGradient id="secondaryBox" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#238636" />
+            <stop offset="100%" stop-color="#2ea043" />
+        </linearGradient>
+        <linearGradient id="accentBox" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#8957e5" />
+            <stop offset="100%" stop-color="#d2a8ff" />
+        </linearGradient>
+        <linearGradient id="darkBox" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#21262d" />
+            <stop offset="100%" stop-color="#30363d" />
+        </linearGradient>
+        <linearGradient id="warningBox" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#d29922" />
+            <stop offset="100%" stop-color="#e3b341" />
+        </linearGradient>
+
+        <!-- Shadows -->
+        <filter id="dropShadow" x="-10%" y="-10%" width="120%" height="120%">
+            <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.5"/>
+        </filter>
+        <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+        </filter>
+
+        <!-- Arrowheads -->
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b949e" />
+        </marker>
+        <marker id="arrowPrimary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff" />
+        </marker>
+        
+        <style>
+            .text-title { font-family: 'Segoe UI', Arial, sans-serif; font-size: 24px; font-weight: bold; fill: #e6edf3; }
+            .text-subtitle { font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; fill: #8b949e; }
+            .text-box { font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; font-weight: bold; fill: #ffffff; text-anchor: middle; }
+            .text-subbox { font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; fill: #e6edf3; text-anchor: middle; }
+            .text-label { font-family: 'Consolas', monospace; font-size: 11px; fill: #8b949e; text-anchor: middle; }
+            .path-line { fill: none; stroke: #8b949e; stroke-width: 2; marker-end: url(#arrow); stroke-dasharray: 4; }
+            .path-line-solid { fill: none; stroke: #58a6ff; stroke-width: 3; marker-end: url(#arrowPrimary); }
+            .group-box { fill: none; stroke: #30363d; stroke-width: 2; stroke-dasharray: 5,5; rx: 10; }
+        </style>
+    </defs>
+
+    <!-- Background -->
+    <rect width="100%" height="100%" fill="url(#bgGradient)" />
+
+    <!-- Title -->
+    <text x="500" y="40" class="text-title" text-anchor="middle" filter="url(#glow)">⚡ FLASH AI v3.0 Architecture</text>
+    <text x="500" y="65" class="text-subtitle" text-anchor="middle">Sovereign Autonomous Systems Architect</text>
+
+    <!-- UI Layer -->
+    <rect x="50" y="100" width="900" height="120" class="group-box" />
+    <text x="500" y="120" class="text-label" font-weight="bold" fill="#8b949e">User Interface Layer (Frontend)</text>
+    
+    <g transform="translate(250, 140)">
+        <rect width="180" height="60" rx="8" fill="url(#darkBox)" stroke="#58a6ff" stroke-width="2" filter="url(#dropShadow)" />
+        <text x="90" y="25" class="text-box">CLI Interface</text>
+        <text x="90" y="45" class="text-subbox">main.ring</text>
+    </g>
+    
+    <g transform="translate(570, 140)">
+        <rect width="180" height="60" rx="8" fill="url(#darkBox)" stroke="#58a6ff" stroke-width="2" filter="url(#dropShadow)" />
+        <text x="90" y="25" class="text-box">Premium GUI (Qt)</text>
+        <text x="90" y="45" class="text-subbox">gui_main.ring</text>
+    </g>
+
+    <!-- Core Agent Bridge -->
+    <g transform="translate(410, 250)">
+        <rect width="180" height="40" rx="20" fill="url(#primaryBox)" filter="url(#dropShadow)" />
+        <text x="90" y="25" class="text-box">CoreAgent (Bridge)</text>
+    </g>
+
+    <!-- Connecting UI to Core -->
+    <path d="M 340 200 C 340 230, 450 220, 500 250" class="path-line-solid" />
+    <path d="M 660 200 C 660 230, 550 220, 500 250" class="path-line-solid" />
+
+    <!-- SmartAgent Orchestration Layer -->
+    <rect x="50" y="320" width="900" height="280" class="group-box" />
+    <text x="500" y="340" class="text-label" font-weight="bold" fill="#8b949e">SmartAgent Central Orchestration Layer (smart_agent.ring)</text>
+
+    <!-- Core Subsystems -->
+    <!-- FSM -->
+    <g transform="translate(100, 370)">
+        <rect width="180" height="70" rx="8" fill="url(#secondaryBox)" filter="url(#dropShadow)" />
+        <text x="90" y="25" class="text-box">Agent State Machine</text>
+        <text x="90" y="45" class="text-subbox">Deterministic FSM</text>
+        <text x="90" y="60" class="text-label" fill="#e6edf3">agent_state_machine.ring</text>
+    </g>
+
+    <!-- Context & Memory -->
+    <g transform="translate(410, 370)">
+        <rect width="180" height="70" rx="8" fill="url(#accentBox)" filter="url(#dropShadow)" />
+        <text x="90" y="25" class="text-box">Context Intelligence</text>
+        <text x="90" y="45" class="text-subbox">Memory &amp; Weighting</text>
+        <text x="90" y="60" class="text-label" fill="#e6edf3">context_engine.ring</text>
+    </g>
+
+    <!-- Reflection -->
+    <g transform="translate(720, 370)">
+        <rect width="180" height="70" rx="8" fill="url(#warningBox)" filter="url(#dropShadow)" />
+        <text x="90" y="25" class="text-box">Reflection Engine</text>
+        <text x="90" y="45" class="text-subbox">Auto-Healing / Errors</text>
+        <text x="90" y="60" class="text-label" fill="#0d1117">reflection_engine.ring</text>
+    </g>
+
+    <!-- AI Client -->
+    <g transform="translate(250, 500)">
+        <rect width="180" height="70" rx="8" fill="url(#darkBox)" stroke="#8957e5" stroke-width="2" filter="url(#dropShadow)" />
+        <text x="90" y="25" class="text-box">AI Client Manager</text>
+        <text x="90" y="45" class="text-subbox">API Dispatcher</text>
+        <text x="90" y="60" class="text-label" fill="#e6edf3">ai_client.ring</text>
+    </g>
+
+    <!-- Agent Tools -->
+    <g transform="translate(570, 500)">
+        <rect width="180" height="70" rx="8" fill="url(#darkBox)" stroke="#2ea043" stroke-width="2" filter="url(#dropShadow)" />
+        <text x="90" y="25" class="text-box">Agent Tools</text>
+        <text x="90" y="45" class="text-subbox">Capabilities Registry</text>
+        <text x="90" y="60" class="text-label" fill="#e6edf3">agent_tools.ring</text>
+    </g>
+
+    <!-- Internal Connections inside SmartAgent -->
+    <path d="M 500 290 L 500 370" class="path-line-solid" />
+    <path d="M 500 370 C 500 350, 190 350, 190 370" class="path-line" />
+    <path d="M 500 370 C 500 350, 810 350, 810 370" class="path-line" />
+    
+    <!-- FSM controls flow -->
+    <path d="M 280 405 C 340 405, 360 405, 410 405" class="path-line" />
+    
+    <!-- Context feeds AI -->
+    <path d="M 460 440 L 390 500" class="path-line" />
+    
+    <!-- FSM triggers Tools -->
+    <path d="M 190 440 C 190 480, 570 480, 570 500" class="path-line" />
+
+    <!-- Reflection analyzes Tools -->
+    <path d="M 720 535 C 810 535, 810 480, 810 440" class="path-line" />
+
+    <!-- AI communicates with Context -->
+    <path d="M 340 500 L 410 440" class="path-line" />
+
+    <!-- External World Layer -->
+    <rect x="50" y="630" width="900" height="100" class="group-box" />
+    <text x="500" y="650" class="text-label" font-weight="bold" fill="#8b949e">External Integrations</text>
+
+    <!-- LLM Providers -->
+    <g transform="translate(150, 660)">
+        <rect width="250" height="50" rx="8" fill="url(#darkBox)" filter="url(#dropShadow)" />
+        <text x="125" y="20" class="text-box">LLM Providers</text>
+        <text x="125" y="40" class="text-label">Gemini, OpenAI, Claude, DeepSeek</text>
+    </g>
+    <path d="M 340 570 L 275 660" class="path-line-solid" />
+
+    <!-- System / OS -->
+    <g transform="translate(425, 660)">
+        <rect width="150" height="50" rx="8" fill="url(#darkBox)" filter="url(#dropShadow)" />
+        <text x="75" y="20" class="text-box">OS / Filesystem</text>
+        <text x="75" y="40" class="text-label">Ring Execution</text>
+    </g>
+    <path d="M 660 570 L 500 660" class="path-line-solid" />
+
+    <!-- MCP Servers -->
+    <g transform="translate(600, 660)">
+        <rect width="250" height="50" rx="8" fill="url(#darkBox)" filter="url(#dropShadow)" />
+        <text x="125" y="20" class="text-box">MCP Servers</text>
+        <text x="125" y="40" class="text-label">Model Context Protocol</text>
+    </g>
+    <path d="M 660 570 L 725 660" class="path-line-solid" />
+
+</svg>

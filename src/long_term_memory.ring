@@ -35,12 +35,15 @@ class LongTermMemory
     #             code_pattern, file_knowledge, tool_learning
     func remember cCategory, cFact, nImportance
         if type(cFact) != "STRING" or trim(cFact) = "" return ok
+        cFact = trim(cFact)
+        cFact = substr(cFact, char(13), "")
+        cFact = substr(cFact, char(10), " ")
         if type(nImportance) != "NUMBER" nImportance = 5 ok
         if nImportance < 1  nImportance = 1 ok
         if nImportance > 10 nImportance = 10 ok
 
         # Check for duplicates (exact or very similar)
-        cFactLower = lower(trim(cFact))
+        cFactLower = lower(cFact)
         for oMem in aMemories
             cExisting = lower(trim(getValueFromList(oMem, "fact", "")))
             if cExisting = cFactLower
@@ -52,7 +55,7 @@ class LongTermMemory
 
         oMemory = [
             ["category", cCategory],
-            ["fact", trim(cFact)],
+            ["fact", cFact],
             ["importance", nImportance],
             ["created", date() + " " + time()],
             ["access_count", 0],
@@ -61,6 +64,7 @@ class LongTermMemory
 
         aMemories + oMemory
         bDirty = true
+        save()
 
         # Prune if over limit
         if len(aMemories) > nMaxMemories
@@ -87,11 +91,11 @@ class LongTermMemory
         for i = 1 to len(cQueryLower)
             cChar = cQueryLower[i]
             nAsc = ascii(cChar)
-            # a-z (97-122), 0-9 (48-57), space (32)
-            if (nAsc >= 97 and nAsc <= 122) or (nAsc >= 48 and nAsc <= 57) or nAsc = 32
-                cCleanQuery += cChar
-            else
+            # Filter out ASCII punctuation marks, preserving English, Arabic, and UTF-8 characters
+            if (nAsc >= 33 and nAsc <= 47) or (nAsc >= 58 and nAsc <= 64) or (nAsc >= 91 and nAsc <= 96) or (nAsc >= 123 and nAsc <= 126)
                 cCleanQuery += " "
+            else
+                cCleanQuery += cChar
             ok
         next
 
@@ -173,16 +177,30 @@ class LongTermMemory
     # Build Context Injection (for AI prompts)
     # ===================================================================
     func buildContextInjection cQuery, nMaxTokens
-        aRelevant = recall(cQuery, 10)
+        aRelevant = recall(cQuery, 5)
+
+        # Always supplement with top user preferences and project facts
+        aPrefs = recallByCategory("user_preference", 3)
+        for oP in aPrefs
+            if find(aRelevant, oP) = 0 aRelevant + oP ok
+        next
+
+        aFacts = recallByCategory("project_fact", 3)
+        for oF in aFacts
+            if find(aRelevant, oF) = 0 aRelevant + oF ok
+        next
+
         if len(aRelevant) = 0 return "" ok
 
-        cInjection = "[LONG-TERM MEMORY - Relevant Knowledge]" + nl
+        cInjection = "[LONG-TERM MEMORY - Persistent Knowledge Base]" + nl
         nUsed = len(cInjection)
         nCount = 0
 
         for oMem in aRelevant
             cFact = getValueFromList(oMem, "fact", "")
             cCat = getValueFromList(oMem, "category", "")
+            cFact = substr(cFact, char(13), "")
+            cFact = substr(cFact, char(10), " ")
             cLine = "• [" + cCat + "] " + cFact + nl
             nEstTokens = estimateTokens(cLine)
             if nUsed + nEstTokens > nMaxTokens
@@ -194,7 +212,7 @@ class LongTermMemory
         next
 
         if nCount = 0 return "" ok
-        cInjection += "[END MEMORY - " + nCount + " facts recalled]" + nl
+        cInjection += "[END MEMORY - " + nCount + " facts active]" + nl
         return cInjection
 
     # ===================================================================
@@ -234,13 +252,16 @@ class LongTermMemory
         if cRole != "user" return ok
         cLower = lower(cContent)
         
-        # User preferences / instructions
-        if substr(cLower, "i prefer") or substr(cLower, "use ") or substr(cLower, "always") or substr(cLower, "don't")
+        # User preferences / instructions (English & Arabic)
+        if substr(cLower, "i prefer") or substr(cLower, "use ") or substr(cLower, "always") or substr(cLower, "don't") or
+           substr(cLower, "أفضل") or substr(cLower, "استخدم") or substr(cLower, "دائما") or substr(cLower, "لا تفعل") or
+           substr(cLower, "اسمي") or substr(cLower, "أنا") or substr(cLower, "اريد") or substr(cLower, "أريد")
             remember("user_preference", cContent, 6)
         ok
         
-        # Project facts
-        if substr(cLower, "project is") or substr(cLower, "this site") or substr(cLower, "the database")
+        # Project facts (English & Arabic)
+        if substr(cLower, "project is") or substr(cLower, "this site") or substr(cLower, "the database") or
+           substr(cLower, "المشروع") or substr(cLower, "الموقع") or substr(cLower, "قاعدة البيانات") or substr(cLower, "الكود")
             remember("project_fact", cContent, 5)
         ok
         
@@ -249,18 +270,6 @@ class LongTermMemory
             remember("security_note", "User mentioned sensitive credentials at " + date(), 8)
         ok
 
-    # ===================================================================
-    # Forget - Remove a specific memory
-    # ===================================================================
-    func forget cFactSubstring
-        cLower = lower(trim(cFactSubstring))
-        for i = len(aMemories) to 1 step -1
-            cFact = lower(getValueFromList(aMemories[i], "fact", ""))
-            if substr(cFact, cLower)
-                del(aMemories, i)
-                bDirty = true
-            ok
-        next
 
     # ===================================================================
     # Get All Memories (for inspection)
@@ -272,13 +281,14 @@ class LongTermMemory
         return len(aMemories)
 
     # ===================================================================
-    # Persistence - Save / Load
+    # Persistence - Save / Load with Markdown Sync
     # ===================================================================
     func save
         if not bDirty and len(aMemories) > 0 return ok
         try
             cJSON = jsonEncodeValue(aMemories)
             write(cMemoryFile, cJSON)
+            syncMarkdownFile()
             bDirty = false
         catch
             # Silent fail on save
@@ -298,6 +308,91 @@ class LongTermMemory
                 aMemories = []
             done
         ok
+
+    # ===================================================================
+    # Forget / Delete Memory
+    # ===================================================================
+    func forget cKeyword
+        if type(cKeyword) != "STRING" or trim(cKeyword) = "" return 0 ok
+        cKeyLower = lower(trim(cKeyword))
+        nRemoved = 0
+        aKept = []
+        for oMem in aMemories
+            cFact = lower(getValueFromList(oMem, "fact", ""))
+            cCat = lower(getValueFromList(oMem, "category", ""))
+            if substr(cFact, cKeyLower) > 0 or substr(cCat, cKeyLower) > 0
+                nRemoved++
+            else
+                aKept + oMem
+            ok
+        next
+        if nRemoved > 0
+            aMemories = aKept
+            bDirty = true
+            save()
+        ok
+        return nRemoved
+
+    # ===================================================================
+    # Export and Sync Memory as Markdown (Structured Document)
+    # Uses ysdragon/markdown for parsing and HTML generation
+    # ===================================================================
+    func exportMarkdown
+        cMD = "# 🧠 FLASH AI - Long-Term Knowledge Base" + nl + nl
+        cMD += "> *Last Synchronized:* " + date() + " " + time() + " | *Total Memories:* " + len(aMemories) + nl + nl
+
+        aCategories = ["user_preference", "project_fact", "code_pattern", "error_pattern", "file_knowledge", "general"]
+        aCatTitles  = [
+            "👤 User Preferences & Directives",
+            "🏛️ Project Architecture & Facts",
+            "💻 Code Patterns & Conventions",
+            "🛡️ Error Patterns & Self-Corrections",
+            "📂 Explored Files & Structure",
+            "💡 General Knowledge"
+        ]
+
+        for cIdx = 1 to len(aCategories)
+            cCat = aCategories[cIdx]
+            cTitle = aCatTitles[cIdx]
+            
+            aCatItems = []
+            for oMem in aMemories
+                if getValueFromList(oMem, "category", "") = cCat
+                    aCatItems + oMem
+                ok
+            next
+
+            if len(aCatItems) > 0
+                cMD += "## " + cTitle + nl + nl
+                for oItem in aCatItems
+                    cFact = getValueFromList(oItem, "fact", "")
+                    nImp = getValueFromList(oItem, "importance", 5)
+                    cDate = getValueFromList(oItem, "created", "")
+                    cMD += "- **[" + nImp + "/10]** " + cFact + " *(recorded: " + cDate + ")*" + nl
+                next
+                cMD += nl
+            ok
+        next
+        return cMD
+
+    func syncMarkdownFile
+        try
+            cMDPath = APP_PATH("ai/memory/MEMORY.md")
+            cContent = exportMarkdown()
+            write(cMDPath, cContent)
+        catch
+        done
+
+    func renderToHTML cMarkdownText
+        if isclass("Markdown")
+            try
+                oMD = new Markdown
+                return oMD.toHTML(cMarkdownText)
+            catch
+            done
+        ok
+        return markdownToHTML(cMarkdownText)
+
 
     # ===================================================================
     # Private Helpers

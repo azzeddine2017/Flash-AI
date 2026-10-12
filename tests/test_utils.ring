@@ -111,6 +111,24 @@ func main {
     testCondition("isCommandBlacklisted: dir is safe",
         not isCommandBlacklisted("dir"))
 
+    # --- hasKeywords ---
+    testCondition("hasKeywords: matching word found",
+        hasKeywords("Please read this file", ["read", "write"]))
+    testCondition("hasKeywords: no match",
+        not hasKeywords("hello world", ["delete", "remove"]))
+
+    # --- Scratchpad & XML Tool Parsers ---
+    cThoughtSample = "<thought>Thinking about solution</thought>Hello"
+    testCase("extractScratchpadThought: basic extraction",
+        extractScratchpadThought(cThoughtSample), "Thinking about solution")
+
+    cToolSample = 'Let me list files <tool_call>{"name": "list_files", "arguments": {"directory": "."}}</tool_call>'
+    aToolRes = extractXmlToolCall(cToolSample)
+    testCondition("extractXmlToolCall: found is true",
+        aToolRes[1] = true)
+    testCase("extractXmlToolCall: tool name",
+        aToolRes[2], "list_files")
+
     # --- Summary ---
     see nl
     see "========================================" + nl
