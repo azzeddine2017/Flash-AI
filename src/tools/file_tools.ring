@@ -11,22 +11,28 @@ func writeFile cFileName, cContent
     try
         if islist(cFileName) cFileName = list2str(cFileName) ok
         if islist(cContent) cContent = list2str(cContent) ok
-        cFileName = "" + cFileName
+        cFileName = trim("" + cFileName)
         cContent = "" + cContent
+        if cFileName = "" or cFileName = "[NULL]" or cFileName = "NULL"
+            return createErrorResult("Filename cannot be empty.")
+        ok
 
-        # Auto-create directory if path includes folders
-        if substr(cFileName, "/") or substr(cFileName, "\")
-            cDir = ""
-            aParts = []
-            if substr(cFileName, "/") aParts = split(cFileName, "/") ok
-            if substr(cFileName, "\") aParts = split(cFileName, "\") ok
-            if len(aParts) > 1
-                for i = 1 to len(aParts) - 1
-                    if i > 1  cDir += "/"  ok
-                    cDir += aParts[i]
-                    if not dirExists(cDir) system("mkdir " + cDir) ok
-                next
+        # Auto-create parent directory using robust ensureDirectoryExists
+        cNormFile = cFileName
+        if iswindows()
+            cNormFile = substr(cNormFile, "/", "\")
+            cFileName = cNormFile
+        ok
+        nLastSlash = 0
+        for i = len(cNormFile) to 1 step -1
+            if cNormFile[i] = "\" or cNormFile[i] = "/"
+                nLastSlash = i
+                exit
             ok
+        next
+        if nLastSlash > 1
+            cParentDir = left(cNormFile, nLastSlash - 1)
+            ensureDirectoryExists(cParentDir)
         ok
 
         nRemoved = 0
@@ -96,11 +102,18 @@ func listFiles cDirectory
 
 func createDirectory cDirName
     try
-        if not dirExists(cDirName)
-            makedir(cDirName)
+        cDirName = trim("" + cDirName)
+        if cDirName = ""
+            return createErrorResult("Directory name cannot be empty.")
+        ok
+        if dirExists(cDirName)
+            return createSuccessResult("Directory already exists: " + cDirName)
+        ok
+        ensureDirectoryExists(cDirName)
+        if dirExists(cDirName)
             return createSuccessResult("Directory created: " + cDirName)
         else
-            return createErrorResult("Directory already exists: " + cDirName)
+            return createErrorResult("Failed to create directory: " + cDirName)
         ok
     catch
         return createErrorResult("Failed to create directory: " + cCatchError)

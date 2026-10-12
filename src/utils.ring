@@ -249,8 +249,8 @@ func isPathSafeCheck cPath
     # Prevent accessing outside the current working dir using .. or absolute paths not under root
     if substr(cPath, "..") return false ok
     
-    # Sensitive Paths
-    if substr(cPath, "config\") or substr(cPath, "api_keys.json") or substr(cPath, ".env")
+    # Sensitive Secret Paths
+    if substr(cPath, "api_keys") or substr(cPath, ".env")
         return false 
     ok
 
@@ -341,9 +341,35 @@ func renderMarkdown cText
 # Ensure a directory exists, create if not
 # ===================================================================
 func ensureDirectoryExists cDir
-    if not dirExists(cDir)
-        makedir(cDir)
+    if type(cDir) != "STRING" or trim(cDir) = "" return ok
+    cNormDir = trim(cDir)
+    if iswindows()
+        cNormDir = substr(cNormDir, "/", "\")
     ok
+    if dirExists(cNormDir) return ok
+
+    cNormSlash = substr(cNormDir, "\", "/")
+    aParts = split(cNormSlash, "/")
+    cCur = ""
+    nStart = 1
+
+    # On Windows, preserve drive root like "g:\" without calling makedir on drive letter
+    if iswindows() and len(aParts) > 0 and len(aParts[1]) = 2 and aParts[1][2] = ":"
+        cCur = aParts[1] + "\"
+        nStart = 2
+    ok
+
+    for i = nStart to len(aParts)
+        if aParts[i] != ""
+            if cCur != "" and right(cCur, 1) != "\" and right(cCur, 1) != "/"
+                if iswindows() cCur += "\" else cCur += "/" ok
+            ok
+            cCur += aParts[i]
+            if not dirExists(cCur)
+                makedir(cCur)
+            ok
+        ok
+    next
 
 # ===================================================================
 # Command Safety
@@ -697,8 +723,19 @@ func extractXmlToolCall cText
             if type(oParsed) = "LIST"
                 cName = getValueFromList(oParsed, "name", "")
                 vArgs = getValueFromList(oParsed, "arguments", NULL)
-                if vArgs = NULL
-                    vArgs = getValueFromList(oParsed, "parameters", [])
+                if vArgs = NULL or (type(vArgs) = "LIST" and len(vArgs) = 0)
+                    vArgs = getValueFromList(oParsed, "parameters", NULL)
+                ok
+                if vArgs = NULL or (type(vArgs) = "LIST" and len(vArgs) = 0)
+                    # Support flat JSON payload: {"name": "...", "param1": "...", "param2": "..."}
+                    vArgs = []
+                    for item in oParsed
+                        if type(item) = "LIST" and len(item) >= 2
+                            if lower("" + item[1]) != "name"
+                                vArgs + item
+                            ok
+                        ok
+                    next
                 ok
                 if type(vArgs) = "STRING" and vArgs != ""
                     try vArgs = json2list(vArgs) catch done

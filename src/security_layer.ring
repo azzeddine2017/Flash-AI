@@ -34,7 +34,7 @@ class SecurityLayer
         # Set working directory as default whitelist root
         aPathWhitelist + lower(CurrentDir())
 
-        # Define risk levels for known tools
+        # Define risk levels for known tools (Project-scoped tools are low risk)
         aToolRiskMap = [
             ["read_file",              "low"],
             ["list_files",             "low"],
@@ -43,19 +43,29 @@ class SecurityLayer
             ["analyze_code",           "low"],
             ["read_url",               "low"],
             ["context_summarizer",     "low"],
-            ["write_file",             "medium"],
-            ["replace_file_content",   "medium"],
-            ["create_directory",       "medium"],
-            ["git_init",               "medium"],
-            ["git_add",                "medium"],
+            ["list_skills",            "low"],
+            ["activate_skill",         "low"],
+            ["read_skill",             "low"],
+            ["save_skill",             "low"],
+            ["modify_skill",           "low"],
+            ["delete_skill",           "low"],
+            ["remember_fact",          "low"],
+            ["recall_memory",          "low"],
+            ["view_memory",            "low"],
+            ["forget_fact",            "low"],
+            ["write_file",             "low"],
+            ["replace_file_content",   "low"],
+            ["create_directory",       "low"],
+            ["git_init",               "low"],
+            ["git_add",                "low"],
             ["git_status",             "low"],
-            ["create_project",         "medium"],
-            ["run_ring_code",          "high"],
-            ["delete_file",            "high"],
-            ["git_commit",             "high"],
-            ["execute_command",        "critical"],
-            ["evolve_new_tool",        "critical"],
-            ["delegate_task",          "high"]
+            ["create_project",         "low"],
+            ["git_commit",             "medium"],
+            ["delegate_task",          "medium"],
+            ["evolve_new_tool",        "medium"],
+            ["delete_file",            "medium"],
+            ["run_ring_code",          "medium"],
+            ["execute_command",        "high"]
         ]
 
     # ===================================================================
@@ -82,8 +92,8 @@ class SecurityLayer
                 return aEntry[2]
             ok
         next
-        # Unknown tools default to high risk
-        return "high"
+        # Unknown/dynamic custom tools default to low risk
+        return "low"
 
     # ===================================================================
     # Validate Tool Execution

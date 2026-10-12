@@ -446,14 +446,23 @@ class AgentTools
                 # File operations (with centralized security checks)
                 on "write_file"
                     cFN = getValueFromList(aParameters, "filename", "")
+                    if cFN = "" cFN = getValueFromList(aParameters, "path", "") ok
+                    if cFN = "" cFN = getValueFromList(aParameters, "file", "") ok
                     if isCoreProtected(cFN)
                         return createErrorResult("SECURITY ERROR: Modification of core agent files is prohibited.")
                     ok
-                    return writeFile(cFN, getValueFromList(aParameters, "content", ""))
+                    cContent = getValueFromList(aParameters, "content", "")
+                    if cContent = "" cContent = getValueFromList(aParameters, "text", "") ok
+                    return writeFile(cFN, cContent)
                 on "read_file"
-                    return readFile(getValueFromList(aParameters, "filename", ""))
+                    cFN = getValueFromList(aParameters, "filename", "")
+                    if cFN = "" cFN = getValueFromList(aParameters, "path", "") ok
+                    if cFN = "" cFN = getValueFromList(aParameters, "file", "") ok
+                    return readFile(cFN)
                 on "delete_file"
                     cFN = getValueFromList(aParameters, "filename", "")
+                    if cFN = "" cFN = getValueFromList(aParameters, "path", "") ok
+                    if cFN = "" cFN = getValueFromList(aParameters, "file", "") ok
                     if isCoreProtected(cFN)
                         return createErrorResult("SECURITY ERROR: Deletion of core agent files is prohibited.")
                     ok
@@ -461,7 +470,10 @@ class AgentTools
                 on "list_files"
                     return listFiles(getValueFromList(aParameters, "directory", "."))
                 on "create_directory"
-                    return createDirectory(getValueFromList(aParameters, "directory_name", ""))
+                    cDir = getValueFromList(aParameters, "directory_name", "")
+                    if cDir = "" cDir = getValueFromList(aParameters, "directory", "") ok
+                    if cDir = "" cDir = getValueFromList(aParameters, "path", "") ok
+                    return createDirectory(cDir)
                 on "replace_file_content"
                     cFN = getValueFromList(aParameters, "filename", "")
                     if isCoreProtected(cFN)
@@ -525,21 +537,35 @@ class AgentTools
                 on "list_skills"
                     return listSkills()
                 on "activate_skill" on "read_skill"
-                    return activateSkill(getValueFromList(aParameters, "skill_name", ""))
+                    cSkillName = getValueFromList(aParameters, "skill_name", "")
+                    if cSkillName = "" cSkillName = getValueFromList(aParameters, "name", "") ok
+                    if cSkillName = "" cSkillName = getValueFromList(aParameters, "skill", "") ok
+                    return activateSkill(cSkillName)
                 on "save_skill"
-                    return saveSkill(
-                        getValueFromList(aParameters, "skill_name", ""),
-                        getValueFromList(aParameters, "description", ""),
-                        getValueFromList(aParameters, "markdown_content", ""))
+                    cSkillName = getValueFromList(aParameters, "skill_name", "")
+                    if cSkillName = "" cSkillName = getValueFromList(aParameters, "name", "") ok
+                    if cSkillName = "" cSkillName = getValueFromList(aParameters, "skill", "") ok
+                    cDesc = getValueFromList(aParameters, "description", "")
+                    if cDesc = "" cDesc = getValueFromList(aParameters, "desc", "") ok
+                    cMD = getValueFromList(aParameters, "markdown_content", "")
+                    if cMD = "" cMD = getValueFromList(aParameters, "content", "") ok
+                    if cMD = "" cMD = getValueFromList(aParameters, "markdown", "") ok
+                    if cMD = "" cMD = getValueFromList(aParameters, "instructions", "") ok
+                    return saveSkill(cSkillName, cDesc, cMD)
                 on "modify_skill"
                     # Backward compatibility for modify_skill
                     cName = getValueFromList(aParameters, "skill_name", "")
+                    if cName = "" cName = getValueFromList(aParameters, "name", "") ok
                     cDesc = getValueFromList(aParameters, "description", "")
+                    if cDesc = "" cDesc = getValueFromList(aParameters, "desc", "") ok
                     cMD = getValueFromList(aParameters, "markdown_content", "")
+                    if cMD = "" cMD = getValueFromList(aParameters, "content", "") ok
                     if cMD = "" cMD = getValueFromList(aParameters, "ring_code", "") ok
                     return saveSkill(cName, cDesc, cMD)
                 on "delete_skill"
-                    return deleteSkill(getValueFromList(aParameters, "skill_name", ""))
+                    cSkillName = getValueFromList(aParameters, "skill_name", "")
+                    if cSkillName = "" cSkillName = getValueFromList(aParameters, "name", "") ok
+                    return deleteSkill(cSkillName)
 
                 # Memory Management
                 on "remember_fact"

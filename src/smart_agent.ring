@@ -798,7 +798,6 @@ class SmartAgent
             if type(p) = "LIST" and len(p) >= 2
                 cVal = p[2]
                 if islist(cVal) cVal = "[List]" ok
-                if cVal = NULL cVal = "[NULL]" ok
                 cDetails += "" + p[1] + ": " + self.oContextEngine.truncateLongText("" + cVal, 100) + " | "
             ok
         next
@@ -817,7 +816,34 @@ class SmartAgent
 
         # --- Step 1: User Confirmation (must come BEFORE SecurityLayer) ---
         bUserApprovedThisTool = false
-        if bCanExecute and isSensitiveToolCheck(cToolName)
+
+        # Check if operation is scoped within project directory
+        bWithinProject = false
+        if isPathTool(cToolName)
+            cPth = ""
+            if len(aParams) > 0
+                if cToolName = "grep_search" or cToolName = "search_in_files"
+                    if len(aParams) >= 2 cPth = aParams[2] ok
+                else
+                    cPth = aParams[1]
+                ok
+                if type(cPth) = "LIST" and len(cPth) >= 2 cPth = cPth[2] ok
+            ok
+            if type(cPth) = "STRING"
+                if cPth = "" or (isPathSafeCheck(cPth) and not self.oAgentTools.isCoreProtected(cPth))
+                    bWithinProject = true
+                ok
+            ok
+        elseif substr(lower(cToolName), "skill") or substr(lower(cToolName), "memory")
+            bWithinProject = true
+        ok
+
+        # Auto-approve actions operating safely within project directory
+        if bWithinProject
+            bUserApprovedThisTool = true
+        ok
+
+        if bCanExecute and isSensitiveToolCheck(cToolName) and not bWithinProject
             if not bSessionAuthorized
                 nAuthRes = 1  # Default: allow (overridden below)
                 if oUIManager != null
@@ -1154,6 +1180,13 @@ class SmartAgent
     # Extract Tool Parameters from args object
     # ===================================================================
     func extractToolParams(cToolName, oArgs)
+        if type(oArgs) = "STRING" and trim(oArgs) != ""
+            try
+                oArgs = json2list(oArgs)
+            catch
+            done
+        ok
+
         oTool = null
         for oToolDef in oAgentTools.aAvailableTools
             if oToolDef.name = cToolName
@@ -1238,10 +1271,14 @@ class SmartAgent
             on "command" return ["cmd", "cli_command", "exec"]
             on "target" return ["target_text", "old_text", "search", "find"]
             on "replacement" return ["replacement_text", "new_text", "replace"]
-            on "content" return ["text", "code", "body", "data"]
+            on "content" return ["text", "code", "body", "data", "markdown", "markdown_content"]
             on "url" return ["link", "uri", "website"]
             on "project_name" return ["name", "project"]
             on "search_term" return ["pattern", "query", "term", "text"]
+            on "skill_name" return ["name", "skill", "skill_id", "title"]
+            on "description" return ["desc", "summary", "about", "details"]
+            on "markdown_content" return ["content", "markdown", "instructions", "body", "text", "skill_content"]
+            on "directory_name" return ["directory", "dir", "path", "folder"]
         off
         return []
 

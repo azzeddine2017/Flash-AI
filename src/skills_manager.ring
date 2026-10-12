@@ -16,6 +16,9 @@ class SkillsManager
     # ===================================================================
     func init()
         cSkillsDir = APP_PATH("skills")
+        if iswindows()
+            cSkillsDir = substr(cSkillsDir, "/", "\")
+        ok
         ensureDirectoryExists(cSkillsDir)
         scanSkills()
 
@@ -45,6 +48,10 @@ class SkillsManager
                 # Directory style: skills/<skill_name>/SKILL.md or <skill_name>.md
                 cTryFile1 = cSkillsDir + "/" + cName + "/SKILL.md"
                 cTryFile2 = cSkillsDir + "/" + cName + "/" + cName + ".md"
+                if iswindows()
+                    cTryFile1 = substr(cTryFile1, "/", "\")
+                    cTryFile2 = substr(cTryFile2, "/", "\")
+                ok
                 if fexists(cTryFile1)
                     cSkillPath = cTryFile1
                     cSkillKey = cName
@@ -56,6 +63,7 @@ class SkillsManager
                 # Standalone file style: skills/<skill_name>.md
                 if right(lower(cName), 3) = ".md"
                     cSkillPath = cSkillsDir + "/" + cName
+                    if iswindows() cSkillPath = substr(cSkillPath, "/", "\") ok
                     cSkillKey = substr(cName, 1, len(cName) - 3)
                 ok
             ok
@@ -184,8 +192,14 @@ class SkillsManager
             cSkillName = substr(cSkillName, " ", "_")
 
             cSkillDir = cSkillsDir + "/" + cSkillName
+            if iswindows()
+                cSkillDir = substr(cSkillDir, "/", "\")
+            ok
             ensureDirectoryExists(cSkillDir)
             cFilePath = cSkillDir + "/SKILL.md"
+            if iswindows()
+                cFilePath = substr(cFilePath, "/", "\")
+            ok
 
             # Ensure Frontmatter exists
             cFinalMD = ""

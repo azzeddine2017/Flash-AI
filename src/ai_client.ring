@@ -24,7 +24,7 @@ class AIClient
     # AIClient initialized with provider: gemini
     cCurrentProvider = "gemini"  # Default provider
     
-    cGeminiModel = "gemini-3.5-flash-lite" # gemini-flash-lite-latest
+    cGeminiModel = "gemini-3.8-flash" # gemini-flash-lite-latest
     cOpenAIModel = "gpt-4.1"
     cClaudeModel = "claude-3.5-sonnet"
     cOpenRouterModel = "google/gemma-4-26b-a4b-it"

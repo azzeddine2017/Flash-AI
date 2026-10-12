@@ -7,6 +7,10 @@
 
 
 func executeCommand cCommand
+    cCommand = trim("" + cCommand)
+    if cCommand = "" or cCommand = "[NULL]" or cCommand = "NULL"
+        return createErrorResult("Command cannot be empty.")
+    ok
     if isCommandBlacklisted(cCommand)
         return createErrorResult("SECURITY ERROR: This command is blacklisted for security.")
     ok
