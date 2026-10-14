@@ -29,7 +29,7 @@ class AIClient
     cClaudeModel = "claude-3.5-sonnet"
     cOpenRouterModel = "nvidia/nemotron-3-ultra-550b-a55b:free"
     cDeepSeekModel = "deepseek-chat"
-    cNvidiaModel = "z-ai/glm-5.3"
+    cNvidiaModel = "deepseek-ai/deepseek-v4.1-flash"
 
     # API Endpoints
     cGeminiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/"+cGeminiModel+":generateContent"
@@ -431,7 +431,7 @@ class AIClient
             return createErrorResponse("OpenAI API key not configured")
         ok
         
-        try
+       // try
             # Build messages array
             aMessages = []
             
@@ -466,9 +466,9 @@ class AIClient
             
             return parseOpenAIResponse(cResponse)
             
-        catch
+       /* catch
             return createErrorResponse("OpenAI request failed: " + cCatchError)
-        done
+        done*/
     
     # ===================================================================
     # Send Claude Request
@@ -1431,10 +1431,11 @@ class AIClient
         ok
 
         cRequestJSON += '}'
-        
+       
         # Send HTTP request
         cResponse = sendHTTPRequest(self.cNvidiaEndpoint, cRequestJSON, "POST", [
                     "Content-Type: application/json",
+                    "Accept: application/json",
                     "Authorization: Bearer " + self.cNvidiaAPIKey
                 ])
         

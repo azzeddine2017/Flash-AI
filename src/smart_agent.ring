@@ -261,6 +261,8 @@ class SmartAgent
             aToolsUsed = []
             nRequestTokens = 0  # Per-request token counter (reset each request)
             nConsecFails = 0    # Consecutive tool failures (bounded by ReflectionEngine.nMaxRetries)
+            cLastToolSig = ""
+            nDuplicateToolCalls = 0
             
             if oStateMachine != null oStateMachine.transition(AGENT_CALLING_LLM) ok
 
@@ -286,6 +288,9 @@ class SmartAgent
                 ok
 
                 # Rebuild context array dynamically to include new user messages, tool calls, and results
+                if nIteration > 1 and len(self.oContextEngine.aFileContext) > 0
+                    oContextMap = prepareContextMap(cMessage, cRequestType, cCurrentCode)
+                ok
                 oContextMap[:context_array] = self.oContextIntelligence.buildWeightedContext(cRequestType, cCurrentCode, 15000)
                 if nIteration = 1
                     aConversation = buildInitialConversation(oContextMap)
@@ -330,6 +335,26 @@ class SmartAgent
                 ok
 
                 if cResponseType = "function_call"
+                    # --- Repetitive Tool Call Guard (Anti-Loop Protection) ---
+                    cCurrentToolName = lower(trim(oAIResponse[:function_name]))
+                    cCurrentToolSig = cCurrentToolName + ":" + list2json(oAIResponse[:function_args])
+                    if cCurrentToolSig = cLastToolSig
+                        nDuplicateToolCalls++
+                    else
+                        cLastToolSig = cCurrentToolSig
+                        nDuplicateToolCalls = 0
+                    ok
+
+                    if nDuplicateToolCalls >= 1
+                        if oUIManager != null 
+                            oUIManager.displaySystemNote("Loop detected: Duplicate execution of '" + cCurrentToolName + "' prevented.")
+                        ok
+                        oToolResult = createErrorResult("[LOOP PREVENTION] You have ALREADY executed '" + cCurrentToolName + "' with identical parameters in the previous turn. The results are already available in your conversation history above. DO NOT re-execute the same tool with the same arguments. Proceed directly to read specific files (read_file), analyze what you found, or reply to the user.")
+                        aConversation = appendToolResultToConversation(aConversation, oAIResponse, oToolResult)
+                        cMessage = ""
+                        loop
+                    ok
+
                     # Final Guard: Ensure we don't jump from Planning to Execution without the user's "green light"
                     if oStateMachine != null and oStateMachine.nCurrentState = AGENT_PLANNING
                        if hasWritingToolCall(oAIResponse)

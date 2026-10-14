@@ -372,15 +372,16 @@ class ContextEngine
     # Get System Prompt for Request Type
     # ===================================================================
     func getSystemPrompt(cRequestType)
+        cBasePrompt = cSystemPromptTemplate
         switch cRequestType
             on "code_analysis"
-                return cCodeAnalysisTemplate
+                return cBasePrompt + nl + nl + "[ SPECIALIZED DIRECTIVE: CODE ANALYSIS & AUDIT ]" + nl + cCodeAnalysisTemplate
             on "file_operation"
-                return cFileOperationTemplate
+                return cBasePrompt + nl + nl + "[ SPECIALIZED DIRECTIVE: FILE OPERATIONS ]" + nl + cFileOperationTemplate
             on "project_management"
-                return cProjectManagementTemplate
+                return cBasePrompt + nl + nl + "[ SPECIALIZED DIRECTIVE: PROJECT MANAGEMENT ]" + nl + cProjectManagementTemplate
             other
-                return cSystemPromptTemplate
+                return cBasePrompt
         off
     
    # ===================================================================
@@ -422,8 +423,10 @@ SECURITY PROTOCOL:
 12. ROADMAP MANAGEMENT: When you start a complex task, define a numbered roadmap (1. Task X, 2. Task Y). The system will automatically track these tasks. When a task is completed, explicitly mention it so the TaskTracker can bridge your progress.`
     
     func getDefaultCodeAnalysisPrompt()
-        return `You are a Senior Performance & Security Auditor.
-        Your task is to perform a deep-dive analysis of the provided Ring source code.
+        return `You are conducting a Performance, Logic & Security Audit of the project.
+Your task is to inspect and analyze the Ring source code.
+If specific code is not provided directly in the user's message, use your exploration tools (read_file, grep_search) to locate and read key Ring files (such as main.ring, gui_main.ring, or files in src/).
+IMPORTANT: Once you have explored or listed a directory, DO NOT list it again. Proceed directly to reading the target files with read_file and provide your analysis in the user's preferred language.
 
 AUDIT DIMENSIONS:
 1. LOGICAL INTEGRITY: Identify potential runtime exceptions, off-by-one errors, or infinite loops.
@@ -431,7 +434,7 @@ AUDIT DIMENSIONS:
 3. PERFORMANCE: Optimize nested loops, suggest built-in list functions over manual iterations, and check complexity.
 4. REFACTORING: Suggest architectural improvements (DRY, SOLID, and separation of concerns).
 
-REQUIRED OUTPUT: Provide a categorized summary (Critical/Warning/Optimization) with specific code examples for fixes.`
+REQUIRED OUTPUT: Provide a categorized summary (Critical/Warning/Optimization) in the user's preferred language with specific code examples for fixes.`
 
     func getDefaultFileOperationPrompt()
         return `You are the Lead File Systems Engineer for FLASH AI.
