@@ -97,16 +97,13 @@ class ContextIntelligence
             aScored + [i, nFinalScore, nTokenEst]
         next
 
-        # Sort by score descending (highest priority first)
-        for i = 1 to len(aScored)
-            for j = 1 to len(aScored) - 1
-                if aScored[j][2] < aScored[j+1][2]
-                    temp = aScored[j]
-                    aScored[j] = aScored[j+1]
-                    aScored[j+1] = temp
-                ok
-            next
+        # Sort by score descending (highest priority first) using native C-speed sort
+        sort(aScored, 2)
+        aScoredDesc = []
+        for k = len(aScored) to 1 step -1
+            aScoredDesc + aScored[k]
         next
+        aScored = aScoredDesc
 
         # Select messages within token budget
         nUsed = 0
@@ -165,16 +162,8 @@ class ContextIntelligence
         next
         aSelectedIndices = aFixedIndices
 
-        # Sort selected indices to restore chronological order
-        for i = 1 to len(aSelectedIndices)
-            for j = 1 to len(aSelectedIndices) - 1
-                if aSelectedIndices[j] > aSelectedIndices[j+1]
-                    temp = aSelectedIndices[j]
-                    aSelectedIndices[j] = aSelectedIndices[j+1]
-                    aSelectedIndices[j+1] = temp
-                ok
-            next
-        next
+        # Sort selected indices to restore chronological order using native sort
+        sort(aSelectedIndices)
 
         # Build the context list in chronological order
         aContext = []

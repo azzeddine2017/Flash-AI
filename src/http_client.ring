@@ -45,7 +45,7 @@ class HTTPClient
     cUserAgent = "-HTTPClient/1.0"
     nTimeout = 30
     bFollowRedirects = true
-    bVerifySSL = false
+    bVerifySSL = true
     cCookieFile = APP_PATH("_cookies.txt")
     
     # Default headers
@@ -83,8 +83,13 @@ class HTTPClient
         curl_easy_setopt(curl, CURLOPT_USERAGENT, cUserAgent)
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, nTimeout)
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1)
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0)
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0)
+        if bVerifySSL
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1)
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2)
+        else
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0)
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0)
+        ok
         curl_easy_setopt(curl, CURLOPT_COOKIEJAR, cCookieFile)
         curl_easy_setopt(curl, CURLOPT_COOKIEFILE, cCookieFile)
     

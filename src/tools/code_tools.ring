@@ -34,15 +34,38 @@ func analyzeCode cCode
 
         nFunctions = 0
         nClasses = 0
-        for cLine in aLines
-            cTrimmedLine = trim(cLine)
-            if substr(cTrimmedLine, "func ")
-                nFunctions++
-            ok
-            if substr(cTrimmedLine, "class ")
-                nClasses++
-            ok
-        next
+
+        # 1. PCRE2 RegEx for exact syntax declaration matching
+        bUsedRegex = false
+        if isclass("RegEx")
+            try
+                oFuncReg = new RegEx("(?im)^\s*(?:func|def)\s+([a-zA-Z0-9_]+)", 0)
+                aFuncMatches = oFuncReg.findAll(cCode)
+                nFunctions = len(aFuncMatches)
+
+                oClassReg = new RegEx("(?im)^\s*class\s+([a-zA-Z0-9_]+)", 0)
+                aClassMatches = oClassReg.findAll(cCode)
+                nClasses = len(aClassMatches)
+                bUsedRegex = true
+            catch
+            done
+        ok
+
+        # 2. Resilient Line-by-Line fallback with comment skipping
+        if not bUsedRegex
+            for cLine in aLines
+                cTrimmedLine = trim(cLine)
+                if left(cTrimmedLine, 1) = "#" or left(cTrimmedLine, 2) = "//"
+                    loop
+                ok
+                if substr(cTrimmedLine, "func ")
+                    nFunctions++
+                ok
+                if substr(cTrimmedLine, "class ")
+                    nClasses++
+                ok
+            next
+        ok
 
         cAnalysis += "Functions: " + nFunctions + nl
         cAnalysis += "Classes: " + nClasses + nl + nl

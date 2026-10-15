@@ -959,7 +959,11 @@ class SmartAgent
             if oToolResult[:success]
                 cResultText = "" + oToolResult[:message]
                 if oUIManager != null
-                    oUIManager.displayToolOutput(cResultText)
+                    try
+                        oUIManager.displayToolOutput(cResultText)
+                    catch
+                        see "  │   └─ " + left(cResultText, 100) + nl
+                    done
                 else
                     see "  │   └─ " + left(cResultText, 100) + nl
                 ok
@@ -975,7 +979,11 @@ class SmartAgent
                         ok
                     ok
                     if oUIManager != null
-                        oUIManager.displayToolStats(cFirstParamVal, oToolResult[:added], oToolResult[:removed])
+                        try
+                            oUIManager.displayToolStats(cFirstParamVal, oToolResult[:added], oToolResult[:removed])
+                        catch
+                            see "   [STATS] " + cFirstParamVal + " | +" + oToolResult[:added] + " / -" + oToolResult[:removed] + nl
+                        done
                     else
                         see "   [STATS] " + cFirstParamVal + " | +" + oToolResult[:added] + " / -" + oToolResult[:removed] + nl
                     ok
@@ -1341,11 +1349,17 @@ class SmartAgent
         saveProjectGoal()
 
     func saveProjectGoal()
-        write(APP_PATH("logs/active_goal.txt"), self.cActiveGoal)
+        ensureDirectoryExists(APP_PATH("ai/state"))
+        write(APP_PATH("ai/state/active_goal.txt"), self.cActiveGoal)
 
     func loadProjectGoal()
-        if fexists(APP_PATH("logs/active_goal.txt"))
-            self.cActiveGoal = read(APP_PATH("logs/active_goal.txt"))
+        cGoalFile = APP_PATH("ai/state/active_goal.txt")
+        # Backwards compatibility check
+        if not fexists(cGoalFile) and fexists(APP_PATH("logs/active_goal.txt"))
+            cGoalFile = APP_PATH("logs/active_goal.txt")
+        ok
+        if fexists(cGoalFile)
+            self.cActiveGoal = read(cGoalFile)
         ok
 
     
@@ -1675,20 +1689,35 @@ class TaskTracker
         return false
 
     func saveTasks()
-        # Save to file to ensure it remains even if the program crashes
-        # Use jsonEncodeRecursive from parent scope if available or shared utils
-        cJSON = jsonEncodeRecursive(self.aTasks)
-        write(APP_PATH("logs/current_roadmap.json"), cJSON)
-        write(APP_PATH("logs/current_task_idx.txt"), "" + self.nCurrentTask)
+        ensureDirectoryExists(APP_PATH("ai/state"))
+        oPlanState = [
+            ["current_task", self.nCurrentTask],
+            ["tasks", self.aTasks]
+        ]
+        cJSON = jsonEncodeValue(oPlanState)
+        write(APP_PATH("ai/state/active_plan.json"), cJSON)
 
     func loadTasks()
-        if fexists(APP_PATH("logs/current_roadmap.json"))
+        cPlanFile = APP_PATH("ai/state/active_plan.json")
+        # Backwards compatibility check
+        if not fexists(cPlanFile) and fexists(APP_PATH("logs/current_roadmap.json"))
+            cPlanFile = APP_PATH("logs/current_roadmap.json")
+        ok
+        if fexists(cPlanFile)
             try
-                cJSON = read(APP_PATH("logs/current_roadmap.json"))
-                aList = json2list(cJSON)
-                if type(aList) = "LIST" self.aTasks = aList ok
-                if fexists(APP_PATH("logs/current_task_idx.txt"))
-                    self.nCurrentTask = 0 + read(APP_PATH("logs/current_task_idx.txt"))
+                cJSON = read(cPlanFile)
+                aData = json2list(cJSON)
+                if type(aData) = "LIST"
+                    nCur = getValueFromList(aData, "current_task", 0)
+                    if nCur > 0
+                        self.nCurrentTask = nCur
+                        self.aTasks = getValueFromList(aData, "tasks", [])
+                    else
+                        self.aTasks = aData
+                        if fexists(APP_PATH("logs/current_task_idx.txt"))
+                            self.nCurrentTask = 0 + read(APP_PATH("logs/current_task_idx.txt"))
+                        ok
+                    ok
                 ok
             catch
             done

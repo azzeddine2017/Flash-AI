@@ -28,11 +28,11 @@ class SecurityLayer
     # Constructor
     # ===================================================================
     func init
-        cAuditFile = APP_PATH("ai/logs/security_audit.log")
-        ensureDirectoryExists(APP_PATH("ai/logs"))
+        cAuditFile = APP_PATH("logs/security_audit.log")
+        ensureDirectoryExists(APP_PATH("logs"))
 
         # Set working directory as default whitelist root
-        aPathWhitelist + lower(CurrentDir())
+        aPathWhitelist + canonicalPath(CurrentDir())
 
         # Define risk levels for known tools (Project-scoped tools are low risk)
         aToolRiskMap = [
@@ -46,26 +46,26 @@ class SecurityLayer
             ["list_skills",            "low"],
             ["activate_skill",         "low"],
             ["read_skill",             "low"],
-            ["save_skill",             "low"],
-            ["modify_skill",           "low"],
-            ["delete_skill",           "low"],
+            ["save_skill",             "medium"],
+            ["modify_skill",           "medium"],
+            ["delete_skill",           "high"],
             ["remember_fact",          "low"],
             ["recall_memory",          "low"],
             ["view_memory",            "low"],
-            ["forget_fact",            "low"],
-            ["write_file",             "low"],
-            ["replace_file_content",   "low"],
-            ["create_directory",       "low"],
+            ["forget_fact",            "medium"],
+            ["write_file",             "medium"],
+            ["replace_file_content",   "medium"],
+            ["create_directory",       "medium"],
             ["git_init",               "low"],
             ["git_add",                "low"],
             ["git_status",             "low"],
-            ["create_project",         "low"],
+            ["create_project",         "medium"],
             ["git_commit",             "medium"],
             ["delegate_task",          "medium"],
-            ["evolve_new_tool",        "medium"],
-            ["delete_file",            "medium"],
-            ["run_ring_code",          "medium"],
-            ["execute_command",        "high"]
+            ["evolve_new_tool",        "high"],
+            ["delete_file",            "high"],
+            ["run_ring_code",          "high"],
+            ["execute_command",        "critical"]
         ]
 
     # ===================================================================
@@ -92,8 +92,8 @@ class SecurityLayer
                 return aEntry[2]
             ok
         next
-        # Unknown/dynamic custom tools default to low risk
-        return "low"
+        # Unknown/dynamic custom tools default to medium risk
+        return "medium"
 
     # ===================================================================
     # Validate Tool Execution
@@ -121,26 +121,83 @@ class SecurityLayer
         return [true, "", cRisk]
 
     # ===================================================================
+    # Path Canonicalization Helper (Resolves relative paths and '..')
+    # ===================================================================
+    func canonicalPath cPath
+        cPath = trim("" + cPath)
+        if cPath = "" return "" ok
+        cNorm = substr(cPath, "/", "\")
+        
+        # Check if already absolute
+        bIsAbsolute = false
+        if iswindows()
+            if len(cNorm) >= 2 and cNorm[2] = ":"
+                bIsAbsolute = true
+            elseif left(cNorm, 2) = "\\"
+                bIsAbsolute = true
+            ok
+        else
+            if left(cNorm, 1) = "/"
+                bIsAbsolute = true
+            ok
+        ok
+        
+        if not bIsAbsolute
+            cCur = substr(CurrentDir(), "/", "\")
+            if right(cCur, 1) != "\" cCur += "\" ok
+            cNorm = cCur + cNorm
+        ok
+        
+        # Resolve "." and ".."
+        aParts = split(cNorm, "\")
+        aResolved = []
+        for cPart in aParts
+            if cPart = "" or cPart = "."
+                loop
+            elseif cPart = ".."
+                if len(aResolved) > 1
+                    del(aResolved, len(aResolved))
+                ok
+            else
+                aResolved + cPart
+            ok
+        next
+        
+        cResult = ""
+        for i = 1 to len(aResolved)
+            if i = 1 and iswindows() and right(aResolved[1], 1) = ":"
+                cResult = aResolved[1] + "\"
+            else
+                if cResult != "" and right(cResult, 1) != "\"
+                    cResult += "\"
+                ok
+                cResult += aResolved[i]
+            ok
+        next
+        return lower(cResult)
+
+    # ===================================================================
     # Path Validation Against Whitelist
     # ===================================================================
     func isPathAllowed cPath
         if bAuthorized return true ok
 
-        cNorm = lower(cPath)
-        cNorm = substr(cNorm, "/", "\")
+        cNorm = canonicalPath(cPath)
+        if cNorm = "" return false ok
 
         for cAllowed in aPathWhitelist
-            cAllowedNorm = lower(cAllowed)
-            cAllowedNorm = substr(cAllowedNorm, "/", "\")
+            cAllowedNorm = canonicalPath(cAllowed)
             if right(cAllowedNorm, 1) != "\"
                 cAllowedNorm += "\"
             ok
-            if left(cNorm, len(cAllowedNorm)) = cAllowedNorm
+            # Exact match or directory subpath match
+            if cNorm = left(cAllowedNorm, len(cAllowedNorm) - 1) or
+               left(cNorm, len(cAllowedNorm)) = cAllowedNorm
                 return true
             ok
         next
 
-        logAudit("PATH_CHECK", "DENIED: " + cPath, "warn")
+        logAudit("PATH_CHECK", "DENIED: " + cPath + " (resolved: " + cNorm + ")", "warn")
         return false
 
     # ===================================================================

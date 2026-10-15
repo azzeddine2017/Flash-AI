@@ -79,18 +79,22 @@ class AIClient
         self.cStreamBuffer += cChunk
         $g_AIClient_StreamBuffer += cChunk
         
-        # Simple extraction for real-time feedback
+        # Real-time feedback extraction with proper quote boundary handling
         nPos = substr(cChunk, '"text": "')
         if nPos > 0
             cRest = substr(cChunk, nPos + 9)
-            nEnd = substr(cRest, '"')
+            nEnd = 0
+            for i = 1 to len(cRest)
+                if cRest[i] = '"' and (i = 1 or cRest[i-1] != char(92))
+                    nEnd = i
+                    exit
+                ok
+            next
             if nEnd > 0
-                cText = left(cRest, nEnd-1)
+                cText = left(cRest, nEnd - 1)
                 cText = substr(cText, "\n", nl)
                 cText = substr(cText, '\"', '"')
                 see cText
-                # Natural typing effect: Add a small delay
-                sleep(0.1)
             ok
         ok
     

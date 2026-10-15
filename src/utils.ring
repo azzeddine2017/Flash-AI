@@ -59,7 +59,20 @@ func jsonEscapeStr cStr
     cStr = substr(cStr, char(10), char(92)+"n")
     cStr = substr(cStr, char(13), char(92)+"r")
     cStr = substr(cStr, char(9),  char(92)+"t")
-    return cStr
+    cStr = substr(cStr, char(8),  char(92)+"b")
+    cStr = substr(cStr, char(12), char(92)+"f")
+    
+    # Strip any invalid control characters (ASCII < 32)
+    cClean = ""
+    for k = 1 to len(cStr)
+        nAsc = ascii(cStr[k])
+        if nAsc < 32 and nAsc != 10 and nAsc != 13 and nAsc != 9
+            loop
+        else
+            cClean += cStr[k]
+        ok
+    next
+    return cClean
 
 # ===================================================================
 # Bulletproof JSON encoder for Ring lists
@@ -315,25 +328,29 @@ func hasArabicText cText
     return false
 
 # ===================================================================
-# Simple Markdown to HTML converter for Gui
+# Full-featured Markdown to HTML converter (Powered by markdown.ring)
 # ===================================================================
 func renderMarkdown cText
-    if cText = "" or cText = null return "" ok
+    if cText = "" or cText = NULL return "" ok
+    
+    # 1. Native High-Fidelity Markdown parser
+    if isclass("Markdown")
+        try
+            oMD = new Markdown
+            cHTML = oMD.toHTML(cText)
+            if trim(cHTML) != "" return cHTML ok
+        catch
+        done
+    ok
+
+    # 2. Resilient Fallback for basic markdown
     cHtml = cText
-    # Handle Newlines
     cHtml = substr(cHtml, nl, "<br>")
-    # Handle bold **text**
-    # Using simple search/replace for common patterns
     cHtml = substr(cHtml, "```", "<pre style='background:#1c2128; padding:10px; border-radius:5px; color:#d19a66; border-left:3px solid #d19a66;'>")
-    # Handle simple lists
     cHtml = substr(cHtml, nl + "- ", nl + "<li>")
     cHtml = substr(cHtml, nl + "* ", nl + "<li>")
-    # Wrap in code blocks if needed
-    if countSubstring(cHtml, "<pre") > 0
-        # Simple heuristic to close blocks
-        if countSubstring(cHtml, "<pre") > countSubstring(cHtml, "</pre")
-            cHtml += "</pre>"
-        ok
+    if countSubstring(cHtml, "<pre") > countSubstring(cHtml, "</pre")
+        cHtml += "</pre>"
     ok
     return cHtml
 
@@ -422,7 +439,31 @@ func safeSystem cCommand, nTimeoutSec
         try
             oProc = new ProcessManager
             if oProc.runCommand(cCommand)
-                oProc.waitForComplete()
+                # Non-blocking timeout guard to prevent process hang
+                nStartClock = clock()
+                bTimedOut = false
+                if ismethod(oProc, "isRunning")
+                    while oProc.isRunning()
+                        nElapsedSec = (clock() - nStartClock) / clockspersecond()
+                        if nElapsedSec >= nTimeoutSec
+                            bTimedOut = true
+                            if ismethod(oProc, "terminate")
+                                oProc.terminate()
+                            elseif ismethod(oProc, "kill")
+                                oProc.kill()
+                            ok
+                            exit
+                        ok
+                        sleep(0.05)
+                    end
+                else
+                    oProc.waitForComplete()
+                ok
+
+                if bTimedOut
+                    return [false, "Command timed out after " + nTimeoutSec + " seconds."]
+                ok
+
                 cStdout = oProc.readOutput()
                 cStderr = oProc.getStderr()
                 nExitCode = oProc.getExitCode()
@@ -448,7 +489,8 @@ func safeSystem cCommand, nTimeoutSec
     ok
 
     # 2. Resilient Fallback using OS redirection
-    cTempOut = APP_PATH("ai/logs/cmd_" + clock() + "_" + random(9999) + ".tmp")
+    ensureDirectoryExists(APP_PATH("logs"))
+    cTempOut = APP_PATH("logs/cmd_" + clock() + "_" + random(9999) + ".tmp")
     try
         if iswindows()
             system(cCommand + ' > "' + cTempOut + '" 2>&1')

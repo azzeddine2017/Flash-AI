@@ -93,6 +93,33 @@ class SkillsManager
         cDesc = "Specialized skill for Flash AI"
         cTitle = cFallbackName
 
+        # 1. High-Performance PCRE2 RegEx extraction
+        if isclass("RegEx")
+            try
+                oReg = new RegEx("(?is)^---\s*\r?\n(.*?)\r?\n---", 0)
+                aMatches = oReg.findAll(cText)
+                if len(aMatches) > 0 and len(aMatches[1]) >= 2
+                    cHeader = aMatches[1][2]
+                    
+                    oNameReg = new RegEx("(?im)^name:\s*(.*?)$", 0)
+                    aN = oNameReg.findAll(cHeader)
+                    if len(aN) > 0 and len(aN[1]) >= 2 cName = trim(aN[1][2]) ok
+                    
+                    oDescReg = new RegEx("(?im)^(?:description|desc):\s*(.*?)$", 0)
+                    aD = oDescReg.findAll(cHeader)
+                    if len(aD) > 0 and len(aD[1]) >= 2 cDesc = trim(aD[1][2]) ok
+
+                    oTitleReg = new RegEx("(?im)^title:\s*(.*?)$", 0)
+                    aT = oTitleReg.findAll(cHeader)
+                    if len(aT) > 0 and len(aT[1]) >= 2 cTitle = trim(aT[1][2]) ok
+
+                    return [cName, cDesc, cTitle]
+                ok
+            catch
+            done
+        ok
+
+        # 2. Resilient Substring / Line fallback
         cTrim = trim(cText)
         if left(cTrim, 3) = "---"
             cAfter = substr(cTrim, 4)

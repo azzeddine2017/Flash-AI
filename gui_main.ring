@@ -1,7 +1,7 @@
 /*
 ==============================================================================
     FLASH AI - Premium Graphical UI (RingQt)
-    Version 2.0 - With Token Counting, Tool Display and Enhanced Sidebar
+    Version 3.0 - With Token Counting, Tool Display and Enhanced Sidebar
     Refactored to Class-based structure for better scoping
 ==============================================================================
 */
@@ -323,6 +323,20 @@ class FlashGUI
         cHtml = "<div style='background-color:#161b22; border: 1px solid #30363d; border-radius:8px; padding:10px; margin:5px 20px; border-left: 4px solid #d19a66;'>" + 
                "<span style='color:#d19a66; font-family:monospace; font-weight:bold;'>◆ TOOL_CALL: " + upper(cToolName) + "</span>" +
                "<div style='color: #8b949e; font-size:10pt; font-family:Consolas; margin-top:4px;'>" + cDetails + "</div></div>"
+        oHistory.append(cHtml)
+        oHistory.verticalScrollBar().setValue(oHistory.verticalScrollBar().maximum())
+        oApp.processEvents()
+
+    func displayToolOutputInternal(cOutput)
+        cHtml = "<div style='background-color:#0d1117; border-left: 3px solid #238636; border-radius:0 8px 8px 0; padding:8px 14px; margin:4px 30px; font-family:Consolas, monospace; font-size:9.5pt; color:#8b949e; max-height:220px; overflow-y:auto;'>" +
+                renderMarkdown(cOutput) + "</div>"
+        oHistory.append(cHtml)
+        oHistory.verticalScrollBar().setValue(oHistory.verticalScrollBar().maximum())
+        oApp.processEvents()
+
+    func displayToolStatsInternal(cFile, nAdd, nRem)
+        cHtml = "<div style='margin:4px 30px; font-size:9.5pt; font-family:Consolas, monospace; color:#58a6ff;'>" +
+                "📊 <b>" + cFile + "</b>: <span style='color:#3fb950;'>+" + nAdd + "</span> / <span style='color:#f85149;'>-" + nRem + "</span></div>"
         oHistory.append(cHtml)
         oHistory.verticalScrollBar().setValue(oHistory.verticalScrollBar().maximum())
         oApp.processEvents()
@@ -713,6 +727,18 @@ class GUIManager{
             oFlashGUI.oHistory.append(cHtml)
             oFlashGUI.oHistory.verticalScrollBar().setValue(oFlashGUI.oHistory.verticalScrollBar().maximum())
             oFlashGUI.oApp.processEvents()
+        ok
+    }
+
+    func displayToolOutput (cOutput){
+        if isGlobal("oFlashGUI") and oFlashGUI != NULL
+            oFlashGUI.displayToolOutputInternal(cOutput)
+        ok
+    }
+
+    func displayToolStats (cFile, nAdd, nRem){
+        if isGlobal("oFlashGUI") and oFlashGUI != NULL
+            oFlashGUI.displayToolStatsInternal(cFile, nAdd, nRem)
         ok
     }
 

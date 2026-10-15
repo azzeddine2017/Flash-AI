@@ -33,13 +33,13 @@ class AgentTools
         registerTools()
         if oLongTermMemory = null
             try
-                oLongTermMemory = new LongTermMemory
+                oLongTermMemory = new LongTermMemory()
             catch
             done
         ok
         if oSkillsManager = null
             try
-                oSkillsManager = new SkillsManager
+                oSkillsManager = new SkillsManager()
             catch
             done
         ok
@@ -830,7 +830,7 @@ class AgentTools
     # ===================================================================
     func listSkills()
         if oSkillsManager = null
-            oSkillsManager = new SkillsManager
+            oSkillsManager = new SkillsManager()
         ok
         aSkills = oSkillsManager.getSkills()
         cOutput = "# FLASH AI - Skills Library (`skills/`)" + nl + nl
@@ -853,7 +853,7 @@ class AgentTools
 
     func activateSkill(cSkillName)
         if oSkillsManager = null
-            oSkillsManager = new SkillsManager
+            oSkillsManager = new SkillsManager()
         ok
         cSkillName = trim(cSkillName)
         if cSkillName = ""
@@ -874,7 +874,7 @@ class AgentTools
 
     func saveSkill(cSkillName, cDescription, cMarkdownContent)
         if oSkillsManager = null
-            oSkillsManager = new SkillsManager
+            oSkillsManager = new SkillsManager()
         ok
         aRes = oSkillsManager.saveSkill(cSkillName, cDescription, cMarkdownContent)
         if aRes[1] = true
@@ -891,7 +891,7 @@ class AgentTools
 
     func deleteSkill(cSkillName)
         if oSkillsManager = null
-            oSkillsManager = new SkillsManager
+            oSkillsManager = new SkillsManager()
         ok
         aRes = oSkillsManager.deleteSkill(cSkillName)
         if aRes[1] = true
@@ -905,7 +905,7 @@ class AgentTools
     # ===================================================================
     func rememberFact(cCategory, cFact, nImportance)
         if oLongTermMemory = null
-            oLongTermMemory = new LongTermMemory
+            oLongTermMemory = new LongTermMemory()
         ok
         if type(nImportance) = "STRING"
             nImportance = 0 + nImportance
@@ -917,7 +917,7 @@ class AgentTools
 
     func recallMemory(cQuery, nMaxResults)
         if oLongTermMemory = null
-            oLongTermMemory = new LongTermMemory
+            oLongTermMemory = new LongTermMemory()
         ok
         if type(nMaxResults) = "STRING"
             nMaxResults = 0 + nMaxResults
@@ -939,7 +939,7 @@ class AgentTools
 
     func viewMemory(cCategory)
         if oLongTermMemory = null
-            oLongTermMemory = new LongTermMemory
+            oLongTermMemory = new LongTermMemory()
         ok
         oLongTermMemory.syncMarkdownFile()
         cCategory = trim(cCategory)
@@ -973,7 +973,7 @@ class AgentTools
 
     func forgetFact(cKeyword)
         if oLongTermMemory = null
-            oLongTermMemory = new LongTermMemory
+            oLongTermMemory = new LongTermMemory()
         ok
         cKeyword = trim(cKeyword)
         if cKeyword = ""
@@ -1057,12 +1057,9 @@ class AgentTools
             # Disable UI outputs for headless operation to prevent console spam
             oSubAgent.setUIManager(NULL)
             
-            # Audit Trail
-            cAuditLog = APP_PATH("logs/sub_agents_audit.log")
-            ensureDirectoryExists(APP_PATH("logs"))
-            cCurrentLog = ""
-            if fexists(cAuditLog) cCurrentLog = read(cAuditLog) ok
-            write(cAuditLog, cCurrentLog + nl + "[" + date() + " " + time() + "] DEPTH " + nDepth + " TASK: " + cTaskInstruction + nl)
+            # Centralized Audit Trail via Logger
+            oSubAgentLogger = new Logger
+            oSubAgentLogger.info("[SUB-AGENT DEPTH " + nDepth + "] START TASK: " + cTaskInstruction)
             
             # Inject a system prompt note ensuring the sub-agent knows its role
             cPrefix = "SYSTEM PROTOCOL: You are a SUB-AGENT (Depth: " + (nDepth+1) + "). Your mission is to execute the following specific sub-task in your own isolated memory layer. Output a comprehensive final report when done." + nl + "[SUB-TASK INSTRUCTION]" + nl
@@ -1071,9 +1068,7 @@ class AgentTools
             oResp = oSubAgent.processRequest(cPrefix + cTaskInstruction, "")
             see "  [-] Sub-agent completed task." + nl
             
-            cCurrentLog = ""
-            if fexists(cAuditLog) cCurrentLog = read(cAuditLog) ok
-            write(cAuditLog, cCurrentLog + "[" + date() + " " + time() + "] DEPTH " + nDepth + " COMPLETED." + nl)            
+            oSubAgentLogger.info("[SUB-AGENT DEPTH " + nDepth + "] COMPLETED TASK.")            
             if oResp[:success]
                 return createSuccessResult("SUB-AGENT REPORT:" + nl + oResp[:message])
             else
@@ -1086,12 +1081,23 @@ class AgentTools
         
     func isCoreProtected(cPath)
         if bAuthorized return false ok
-        cLower = lower(cPath)
+        cLower = lower(trim("" + cPath))
+        cLower = substr(cLower, "/", "\")
+        
+        # Protect main launch entry points
+        if cLower = "main.ring" or cLower = "gui_main.ring" or
+           right(cLower, 10) = "\main.ring" or right(cLower, 13) = "\gui_main.ring"
+            return true
+        ok
+
         # Comprehensive protection list: secrets, config, and core agent modules
-        aBlacklist = [".env", "api_keys.json", "config/api_keys",
-                      "smart_agent.ring", "core_agent.ring", "agent_tools.ring",
+        aBlacklist = [".env", "api_keys.json", "config\api_keys", "config/api_keys",
+                      "src\", "src/", "smart_agent.ring", "core_agent.ring", "agent_tools.ring",
                       "ai_client.ring", "context_engine.ring", "security_layer.ring",
-                      "loadfiles.ring", "http_client.ring", "mcp_client_manager.ring"]
+                      "loadfiles.ring", "http_client.ring", "mcp_client_manager.ring",
+                      "agent_state_machine.ring", "reflection_engine.ring",
+                      "context_intelligence.ring", "long_term_memory.ring", "logger.ring",
+                      "telemetry.ring", "skills_manager.ring", "ui_manager.ring", "utils.ring"]
         for cCore in aBlacklist
             if substr(cLower, cCore) return true ok
         next

@@ -81,17 +81,33 @@ func listFiles cDirectory
         if type(cDirectory) = "NULL" or trim(cDirectory) = "" or cDirectory = NULL or cDirectory = "'.'" or cDirectory = '"."'
             cDirectory = "."
         ok
+        
+        # 1. Native Ring directory inspection (Fast, robust with spaces, native)
+        if dirExists(cDirectory)
+            aList = dir(cDirectory)
+            cOutput = ""
+            for item in aList
+                cName = item[1]
+                if cName = "." or cName = ".." loop ok
+                if item[2] = 1 # Directory
+                    cOutput += "[DIR]  " + cName + nl
+                else
+                    cOutput += "[FILE] " + cName + nl
+                ok
+            next
+            return createSuccessResult("Files in " + cDirectory + ":" + nl + cOutput)
+        ok
+        
+        # 2. Resilient Shell Fallback
         cCommand = ""
         if iswindows()
-            # Normalize to avoid confusing dir with quotes if unnecessary
-            cDirectory = substr(cDirectory, "/", "\")
-            cCommand = "dir " + cDirectory + " /b"
+            cCommand = 'dir "' + cDirectory + '" /b'
         else
-            cCommand = "ls " + cDirectory
+            cCommand = "ls '" + cDirectory + "'"
         ok
-        aResult = safeSystem(cCommand, 30) # Increased timeout to 30s
+        aResult = safeSystem(cCommand, 30)
         if aResult[1]
-            return createSuccessResult("Files in " + cDirectory + ":" +nl +"" + aResult[2])
+            return createSuccessResult("Files in " + cDirectory + ":" + nl + aResult[2])
         else
             return createErrorResult("Failed to list files: " + aResult[2])
         ok
@@ -134,14 +150,17 @@ func replace_file_content cFileName, cTarget, cReplacement
             nRem = len(str2list(cTarget))
             nAdd = len(str2list(cReplacement))
 
-            # Try exact match first
-            if substr(cContent, cTarget)
-                cNewContent = substr(cContent, cTarget, cReplacement)
+            # 1. Exact Surgical Match (Replaces FIRST occurrence only to protect integrity)
+            nPos = substr(cContent, cTarget)
+            if nPos > 0
+                cBefore = left(cContent, nPos - 1)
+                cAfter  = substr(cContent, nPos + len(cTarget))
+                cNewContent = cBefore + cReplacement + cAfter
                 write(cFileName, cNewContent)
                 return createSuccessResultExtended("File edited successfully: " + cFileName, nAdd, nRem)
             ok
 
-            # Try match with trimmed strings (fallback)
+            # 2. Match with trimmed strings (Smart line-level fallback)
             aLines = str2list(cContent)
             bFound = false
             cTargetTrim = trim(cTarget)
@@ -186,10 +205,12 @@ func grep_search cPattern, cDir
         if cSafePattern = ""
             return createErrorResult("Search pattern is empty or invalid after sanitization.")
         ok
+        if cDir = "" or cDir = NULL cDir = "." ok
         if isWindows()
-            cCmd = 'findstr /S /I /C:"' + cSafePattern + '" ' + cDir + '\*.ring'
+            cDirNorm = substr(cDir, "/", "\")
+            cCmd = 'findstr /S /I /C:"' + cSafePattern + '" "' + cDirNorm + '\*.*"'
         else
-            cCmd = 'grep -r -i "' + cSafePattern + '" ' + cDir
+            cCmd = 'grep -r -i "' + cSafePattern + '" "' + cDir + '"'
         ok
         return executeCommand(cCmd)
     catch

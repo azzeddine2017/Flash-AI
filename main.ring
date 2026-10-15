@@ -97,7 +97,7 @@ class oApp
     }
 
     func prepareConsole {
-        setConsoleTitle("FLASH AI v2.0 — Agent Terminal")
+        setConsoleTitle("FLASH AI v3.0 — Agent Terminal")
         showCursor()
     }
 
@@ -851,7 +851,7 @@ class oApp
             on ""
                 # General help
                 setColor(CYAN)
-                ? "  FLASH AI v2.0 - Command Reference"
+                ? "  FLASH AI v3.0 - Command Reference"
                 ? "  " + copy("=", 40)
                 ? ""
                 setColor(WHITE)
