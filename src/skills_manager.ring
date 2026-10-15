@@ -223,6 +223,9 @@ class SkillsManager
                 cSkillDir = substr(cSkillDir, "/", "\")
             ok
             ensureDirectoryExists(cSkillDir)
+            if not dirExists(cSkillDir)
+                try makedir(cSkillDir) catch done
+            ok
             cFilePath = cSkillDir + "/SKILL.md"
             if iswindows()
                 cFilePath = substr(cFilePath, "/", "\")
