@@ -148,7 +148,7 @@ class AgentTools
 
 
         aAvailableTools + createToolFull("save_skill", 
-            "Create a new skill or update an existing skill as a structured Markdown document in skills/<skill_name>/SKILL.md",
+            "Create a new skill or update an existing skill as a structured Markdown document strictly in root skills/<skill_name>/SKILL.md (never in ai/skills)",
             [["skill_name","Unique name for the skill (e.g. web_scraping, data_analysis)","string"],
              ["description","Clear 1-2 sentence description explaining when and why the agent should activate this skill","string"],
              ["markdown_content","The full Markdown text containing guidelines, rules, and examples","string"]],
